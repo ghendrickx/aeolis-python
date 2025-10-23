@@ -1706,8 +1706,7 @@ class AeoLiS(IBmi):
                     Ct[0,:,0] =  -2                
                     Ct[-1,:,0] =  -2
 
-                # Ct, pickup = sweep(s['Cu'].copy(), s['mass'].copy(), self.dt, p['T'], s['ds'], s['dn'], s['us'], s['un'] )
-                Ct, pickup = sweep3(Ct, s['Cu'].copy(), s['mass'].copy(), self.dt, p['T'], s['ds'], s['dn'], s['us'], s['un'],w)
+                Ct, pickup = sweep(Ct, s['Cu'].copy(), s['mass'].copy(), self.dt, p['T'], s['ds'], s['dn'], s['us'], s['un'],w)
 
             if 0:
                 #define 4 quadrants based on wind directions
