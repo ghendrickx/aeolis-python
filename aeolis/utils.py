@@ -449,7 +449,7 @@ def calc_mean_grain_size(p, s):
                 D_mean[yi, xi] = np.sum(diameters*weights)
     return D_mean
 
-@njit(cache=True)
+# @njit(cache=True) this function is an orchestrator njit will not be faster
 def sweep(Ct, Cu, mass, dt, Ts, ds, dn, us, un, w):
 
 
@@ -506,7 +506,7 @@ def sweep(Ct, Cu, mass, dt, Ts, ds, dn, us, un, w):
     ufn[0,:,:]  = (ufn[0,:,:]+ufn[-1,:,:])/2
     ufn[-1,:,:] = ufn[0,:,:] 
 
-    # now make sure that there is no gradients at the bondares
+    # now make sure that there is no gradients at the bondaries
     ufs[:,1,:]  = ufs[:,0,:]
     ufs[:,-2,:] = ufs[:,-1,:]
     ufs[1,:,:]  = ufs[0,:,:]
@@ -544,148 +544,52 @@ def sweep(Ct, Cu, mass, dt, Ts, ds, dn, us, un, w):
             Ct[:,0,0],Ct[:,-1,0] = Ct[:,-1,0].copy(),Ct[:,0,0].copy()
 
         if recirc_offshore:
-            # print(Ct[:,1,0])
-            # print(Ct[:,-2,0]) 
-            Ct[:,0,0],Ct[:,-1,0] = np.average(Ct[:,-2,0]),np.average(Ct[:,1,0])
-            # print(Ct[:,0,0])
-            # print(Ct[:,-1,0]) 
+            Ct[:,0,0],Ct[:,-1,0] = np.mean(Ct[:,-2,0]), np.mean(Ct[:,1,0])
 
-        # make an array with a bolean operator. This keeps track of considerd cells. We start with all False (not considered)
-        q = np.zeros(Cu.shape[:2]) 
+        # Track visited  cells and quadrant classification
+        visited = np.zeros(Cu.shape[:2], dtype=np.bool_)
+        quad = np.zeros(Cu.shape[:2], dtype=np.uint8)
 
     ########################################################################################
         # in this sweeping algorithm we sweep over the 4 quadrants
         # assuming that most cells have no converging/divering charactersitics.
         # In the last quadrant we take converging and diverging cells into account. 
 
-        # The First quadrant  
-        for n in range(1,Ct.shape[0]):
-            for s in range(1,Ct.shape[1]):
-                if (not q[n,s]) and (ufn[n,s,0]>=0) and (ufs[n,s,0]>=0) and (ufn[n+1,s,0]>=0) and (ufs[n,s+1,0]>=0):
-                    Ct[n,s,:] = (+ (Ct[n-1,s,:] * ufn[n,s,:] * ds[n,s]) \
-                                    + (Ct[n,s-1,:] * ufs[n,s,:] * dn[n,s]) \
-                                    + w[n,s,:] * Cu[n,s,:] * ds[n,s] * dn [n,s] / Ts  ) \
-                                    / ( + (ufn[n+1,s,:] * ds[n,s]) \
-                                    + (ufs[n,s+1,:] * dn[n,s]) \
-                                    + (ds[n,s] * dn [n,s] / Ts) )
-                    #calculate pickup                
-                    pickup[n,s,:] = (w[n,s,:] * Cu[n,s,:] - Ct[n,s,:]) * dt/Ts
-                    #check for supply limitations and re-iterate concentration to account for supply limitations
-                    for nfs in range(0,nf):
-                        if pickup[n,s,nfs]>mass[n,s,0,nfs]:
-                            pickup[n,s,nfs] = mass[n,s,0,nfs]              
-                            Ct[n,s,nfs] = (+ (Ct[n-1,s,nfs] * ufn[n,s,nfs] * ds[n,s]) \
-                                        + (Ct[n,s-1,nfs] * ufs[n,s,nfs] * dn[n,s]) \
-                                            + pickup[n,s,nfs] * ds[n,s] * dn [n,s] / dt ) \
-                                            / (+(ufn[n+1,s,nfs] * ds[n,s]) \
-                                            + (ufs[n,s+1,nfs] * dn[n,s]))
-                    q[n,s]=1
-        # The second quadrant
-        for n in range(1,Ct.shape[0]):
-            for s in range(Ct.shape[1]-2,-1,-1):  
-                if (not q[n,s]) and (ufn[n,s,0]>=0) and (ufs[n,s,0]<=0) and (ufn[n+1,s,0]>=0) and (ufs[n,s+1,0]<=0):
-                    Ct[n,s,:] = (+ (Ct[n-1,s,:] * ufn[n,s,:] * ds[n,s]) \
-                                    + ( -Ct[n,s+1,:] * ufs[n,s+1,:] * dn[n,s]) \
-                                    + w[n,s,:] * Cu[n,s,:] * ds[n,s] * dn [n,s] / Ts  ) \
-                                    / ( + (ufn[n+1,s,:] * ds[n,s]) \
-                                    + (-ufs[n,s,:] * dn[n,s]) \
-                                    + (ds[n,s] * dn [n,s] / Ts) )
-                    #calculate pickup                
-                    pickup[n,s,:] = (w[n,s,:] * Cu[n,s,:]-Ct[n,s,:]) * dt/Ts
-                    #check for supply limitations and re-iterate concentration to account for supply limitations
-                    for nfs in range(0,nf):
-                        if pickup[n,s,nfs]>mass[n,s,0,nfs]:
-                            pickup[n,s,nfs] = mass[n,s,0,nfs]              
-                            Ct[n,s,nfs] = (+ (Ct[n-1,s,nfs] * ufn[n,s,nfs] * ds[n,s]) \
-                                            + ( -Ct[n,s+1,nfs] * ufs[n,s+1,nfs] * dn[n,s]) \
-                                            + pickup[n,s,nfs] * ds[n,s] * dn [n,s] / dt ) \
-                                            / ( + (ufn[n+1,s,nfs] * ds[n,s]) \
-                                            + (-ufs[n,s,nfs] * dn[n,s]))  
-                    q[n,s]=2
-        # The third quadrant
-        for n in range(Ct.shape[0]-2,-1,-1):
-            for s in range(Ct.shape[1]-2,-1,-1):
-                if (not q[n,s]) and (ufn[n,s,0]<=0) and (ufs[n,s,0]<=0) and (ufn[n+1,s,0]<=0) and (ufs[n,s+1,0]<=0):
-                    Ct[n,s,:] = (+ ( -Ct[n+1,s,:] * ufn[n+1,s,:] * dn[n,s]) \
-                                    + ( -Ct[n,s+1,:] * ufs[n,s+1,:] * dn[n,s]) \
-                                    + w[n,s,:] * Cu[n,s,:] * ds[n,s] * dn [n,s] / Ts  ) \
-                                    / ( + (-ufn[n,s,:] * dn[n,s]) \
-                                    + (-ufs[n,s,:] * dn[n,s]) \
-                                    + (ds[n,s] * dn [n,s] / Ts) )
-                    #calculate pickup                
-                    pickup[n,s,:] = (w[n,s,:] * Cu[n,s,:]-Ct[n,s,:]) * dt/Ts
-                    #check for supply limitations and re-iterate concentration to account for supply limitations
-                    for nfs in range(0,nf):
-                        if pickup[n,s,nfs]>mass[n,s,0,nfs]:
-                            pickup[n,s,nfs] = mass[n,s,0,nfs]              
-                            Ct[n,s,nfs] = (+ ( -Ct[n+1,s,nfs] * ufn[n+1,s,nfs] * dn[n,s]) \
-                                            + ( -Ct[n,s+1,nfs] * ufs[n,s+1,nfs] * dn[n,s]) \
-                                            + pickup[n,s,nfs] * ds[n,s] * dn [n,s] / dt ) \
-                                            / ( + (-ufn[n,s,nfs] * dn[n,s]) \
-                                            + (-ufs[n,s,nfs] * dn[n,s]))   
-                    q[n,s]=3  
-        # The fourth guadrant including all remainnig unadressed cells  
-        for n in range(Ct.shape[0]-2,-1,-1):
-            for s in range(1,Ct.shape[1]): 
-                if (not q[n,s]):
-                    if (ufn[n,s,0]<=0) and (ufs[n,s,0]>=0) and (ufn[n+1,s,0]<=0) and (ufs[n,s+1,0]>=0): 
-                        # this is the fourth quadrant
-                        Ct[n,s,:] = (+ (Ct[n,s-1,:] * ufs[n,s,:] * dn[n,s]) \
-                                        + ( -Ct[n+1,s,:] * ufn[n+1,s,:] * dn[n,s]) \
-                                        + w[n,s,:] * Cu[n,s,:] * ds[n,s] * dn [n,s] / Ts  ) \
-                                        / ( + (ufs[n,s+1,:] * dn[n,s]) \
-                                        + (-ufn[n,s,:] * dn[n,s]) \
-                                        + (ds[n,s] * dn [n,s] / Ts) )
-                        #calculate pickup                
-                        pickup[n,s,:] = (w[n,s,:] * Cu[n,s,:]-Ct[n,s,:]) * dt/Ts
-                        #check for supply limitations and re-iterate concentration to account for supply limitations
-                        for nfs in range(0,nf):
-                            if pickup[n,s,nfs]>mass[n,s,0,nfs]:
-                                pickup[n,s,nfs] = mass[n,s,0,nfs]              
-                                Ct[n,s,nfs] = (+ (Ct[n,s-1,nfs] * ufs[n,s,nfs] * dn[n,s]) \
-                                                + ( -Ct[n+1,s,nfs] * ufn[n+1,s,nfs] * dn[n,s]) \
-                                                + pickup[n,s,nfs] * ds[n,s] * dn [n,s] / dt ) \
-                                                / ( + (ufs[n,s+1,nfs] * dn[n,s]) \
-                                                + (-ufn[n,s,nfs] * dn[n,s]))        
-                        q[n,s]=4
-                    else:
-                        if (not n==0) and (not s==Ct.shape[1]-1):
-                            # This is where we apply a generic stencil where all posible directions on the cell boundaries are solved for.
-                            # all remaining cells will be calculated for and q=5 is assigned. 
-                            # this stencil is nested in the q4 loop which is the final quadrant.
-                            # grid boundaries are filtered in both if statements.
-                            Ct[n,s,:] = (+ (ufn[n,s,0]>0) * (Ct[n-1,s,:] * ufn[n,s,:] * ds[n,s]) \
-                                            + (ufs[n,s,0]>0) * (Ct[n,s-1,:] * ufs[n,s,:] * dn[n,s]) \
-                                            + (ufn[n+1,s,0]<0) * ( -Ct[n+1,s,:] * ufn[n+1,s,:] * dn[n,s]) \
-                                            + (ufs[n,s+1,0]<0) * ( -Ct[n,s+1,:] * ufs[n,s+1,:] * dn[n,s]) \
-                                            + w[n,s,:] * Cu[n,s,:] * ds[n,s] * dn [n,s] / Ts  ) \
-                                            / ( + (ufn[n+1,s,0]>0) * (ufn[n+1,s,:] * ds[n,s]) \
-                                            + (ufs[n,s+1,0]>0) * (ufs[n,s+1,:] * dn[n,s]) \
-                                            + (ufn[n,s,0]<0) * (-ufn[n,s,:] * dn[n,s]) \
-                                            + (ufs[n,s,0]<0) * (-ufs[n,s,:] * dn[n,s]) \
-                                            + (ds[n,s] * dn [n,s] / Ts) )
-                            #calculate pickup                
-                            pickup[n,s,:] = (w[n,s,:] * Cu[n,s,:]-Ct[n,s,:]) * dt/Ts
-                            #check for supply limitations and re-iterate concentration to account for supply limitations
-                            for nfs in range(0,nf):
-                                if pickup[n,s,nfs]>mass[n,s,0,nfs]:
-                                    pickup[n,s,nfs] = mass[n,s,0,nfs]              
-                                    Ct[n,s,nfs] = (+ (ufn[n,s,0]>0) * (Ct[n-1,s,nfs] * ufn[n,s,nfs] * ds[n,s]) \
-                                                    + (ufs[n,s,0]>0) * (Ct[n,s-1,nfs] * ufs[n,s,nfs] * dn[n,s]) \
-                                                    + (ufn[n+1,s,0]<0) * ( -Ct[n+1,s,nfs] * ufn[n+1,s,nfs] * dn[n,s]) \
-                                                    + (ufs[n,s+1,0]<0) * ( -Ct[n,s+1,nfs] * ufs[n,s+1,nfs] * dn[n,s]) \
-                                                    + pickup[n,s,nfs] * ds[n,s] * dn [n,s] / dt ) \
-                                                    / ( + (ufn[n+1,s,0]>0) * (ufn[n+1,s,nfs] * ds[n,s]) \
-                                                    + (ufs[n,s+1,0]>0) * (ufs[n,s+1,nfs] * dn[n,s]) \
-                                                    + (ufn[n,s,0]<0) * (-ufn[n,s,nfs] * dn[n,s]) \
-                                                    + (ufs[n,s,0]<0) * (-ufs[n,s,nfs] * dn[n,s]))   
-                            q[n,s]=5
+        # The First quadrant (Numba-optimized)
+        _solve_quadrant1(Ct, Cu, mass, pickup, dt, Ts, ds, dn, ufs, ufn, w, visited, quad, nf)
+        
+        # The second quadrant (Numba-optimized)
+        _solve_quadrant2(Ct, Cu, mass, pickup, dt, Ts, ds, dn, ufs, ufn, w, visited, quad, nf)
+        
+        # The third quadrant (Numba-optimized)
+        _solve_quadrant3(Ct, Cu, mass, pickup, dt, Ts, ds, dn, ufs, ufn, w, visited, quad, nf)
+        
+        # The fourth quadrant (Numba-optimized)
+        _solve_quadrant4(Ct, Cu, mass, pickup, dt, Ts, ds, dn, ufs, ufn, w, visited, quad, nf)
+        
+        # Generic stencil for remaining cells including boundaries (Numba-optimized)
+        _solve_generic_stencil(Ct, Cu, mass, pickup, dt, Ts, ds, dn, ufs, ufn, w, visited, quad, nf)
 
 
         k+=1
-
-    #     print(k)
     
+    # # plot Ct
+    # import matplotlib.pyplot as plt
+    # plt.imshow(quad[:10,:10], origin='lower')
+    # # plt.colorbar()
+    # plt.title('Concentration after %d sweeps' % k)
+    # plt.show()
+    # plt.imshow(Ct[:50,:50], origin='lower')
+    # # plt.colorbar()
+    # plt.title('Concentration after %d sweeps' % k)
+    # plt.show()
+    # plt.plot(pickup[0,:,0])
+    # plt.plot(pickup[-1,:,0])
+    # plt.show()
+
+        # print(k)
+
+
     # print("q1 = " + str(np.sum(q==1)) + "     q2 = " + str(np.sum(q==2)) \
     #       + "     q3 = " + str(np.sum(q==3)) + "     q4 = " + str(np.sum(q==4)) \
     #         + "     q5 = " + str(np.sum(q==5)))
