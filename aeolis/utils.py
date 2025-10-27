@@ -449,7 +449,10 @@ def calc_mean_grain_size(p, s):
                 D_mean[yi, xi] = np.sum(diameters*weights)
     return D_mean
 
-# @njit(cache=True) this function is an orchestrator njit will not be faster
+# Note: @njit(cache=True) is intentionally not used here.
+# This function acts as an orchestrator, delegating work to Numba-compiled helper functions.
+# Decorating the orchestrator itself with njit provides no performance benefit,
+# since most of the computation is already handled by optimized Numba functions.
 def sweep(Ct, Cu, mass, dt, Ts, ds, dn, us, un, w):
 
 
@@ -506,7 +509,7 @@ def sweep(Ct, Cu, mass, dt, Ts, ds, dn, us, un, w):
     ufn[0,:,:]  = (ufn[0,:,:]+ufn[-1,:,:])/2
     ufn[-1,:,:] = ufn[0,:,:] 
 
-    # now make sure that there is no gradients at the bondaries
+    # now make sure that there is no gradients at the boundaries
     ufs[:,1,:]  = ufs[:,0,:]
     ufs[:,-2,:] = ufs[:,-1,:]
     ufs[1,:,:]  = ufs[0,:,:]
@@ -549,7 +552,7 @@ def sweep(Ct, Cu, mass, dt, Ts, ds, dn, us, un, w):
             Ct[:,0,0],Ct[:,-1,0] = np.mean(Ct[:,-2,0]), np.mean(Ct[:,1,0])
 
         # Track visited  cells and quadrant classification
-        visited = np.zeros(Cu.shape[:2], dtype=np.bool_)
+        visited = np.zeros(Cu.shape[:2], dtype=bool)
         quad = np.zeros(Cu.shape[:2], dtype=np.uint8)
 
     ########################################################################################

@@ -98,7 +98,7 @@ def avalanche(s, p):
         ny = p['ny'] + 1
 
         # parameters - only dynamic angle used in loop for now. 
-        # Static angle can be used for more complex criterions in later
+        # Static angle can be used for more complex criteria in later
         # tan_stat = np.tan(np.deg2rad(s['theta_stat']))
         tan_dyn = np.tan(np.deg2rad(s['theta_dyn']))
 
