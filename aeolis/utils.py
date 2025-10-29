@@ -543,10 +543,10 @@ def sweep(Ct, Cu, mass, dt, Ts, ds, dn, us, un, w):
         # lateral boundaries circular
         if circ_lateral:
             Ct[0,:,0],Ct[-1,:,0] = Ct[-1,:,0].copy(),Ct[0,:,0].copy()
-            pickup[0,:,0],pickup[-1,:,0] = pickup[-1,:,0].copy(),pickup[0,:,0].copy()
+            # pickup[0,:,0],pickup[-1,:,0] = pickup[-1,:,0].copy(),pickup[0,:,0].copy()
         if circ_offshore:
             Ct[:,0,0],Ct[:,-1,0] = Ct[:,-1,0].copy(),Ct[:,0,0].copy()
-            pickup[:,0,0],pickup[:,-1,0] = pickup[:,-1,0].copy(),pickup[:,0,0].copy()
+            # pickup[:,0,0],pickup[:,-1,0] = pickup[:,-1,0].copy(),pickup[:,0,0].copy()
 
         if recirc_offshore:
             Ct[:,0,0],Ct[:,-1,0] = np.mean(Ct[:,-2,0]), np.mean(Ct[:,1,0])
@@ -575,7 +575,11 @@ def sweep(Ct, Cu, mass, dt, Ts, ds, dn, us, un, w):
         # Generic stencil for remaining cells including boundaries (Numba-optimized)
         _solve_generic_stencil(Ct, Cu, mass, pickup, dt, Ts, ds, dn, ufs, ufn, w, visited, quad, nf)
 
-
+        # check the boundaries of the pickup matrix for unvisited cells
+        # print(np.shape(visited[0,:]==False))
+        pickup[0,:,0] = pickup[1,:,0].copy() 
+        pickup[-1,:,0] = pickup[-2,:,0].copy() 
+                
         k+=1
     
     # # plot Ct
