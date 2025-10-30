@@ -485,20 +485,23 @@ def sweep(Ct, Cu, mass, dt, Ts, ds, dn, us, un, w):
     ufs = np.zeros((np.shape(us)[0], np.shape(us)[1]+1, np.shape(us)[2]))
     ufn = np.zeros((np.shape(un)[0]+1, np.shape(un)[1], np.shape(un)[2]))
     
-    # define fluxes
+    # define velocity at cell faces
     ufs[:,1:-1, :] = 0.5*us[:,:-1, :] + 0.5*us[:,1:, :]
     ufn[1:-1,:, :] = 0.5*un[:-1,:, :] + 0.5*un[1:,:, :]
 
     # print(ufs[5,:,0])
 
-        # boundary values
-    ufs[:,0, :]  = us[:,0, :]
-    ufs[:,-1, :] = us[:,-1, :]
+    # set empty boundary values, extending the velocities at the boundaries
+    ufs[:,0, :]  = ufs[:,1, :]
+    ufs[:,-1, :] = ufs[:,-2, :]
    
-    ufn[0,:, :]  = un[0,:, :]
-    ufn[-1,:, :] = un[-1,:, :]
-    # first lets take the average of the top and bottom and left/right boundary cells
+    ufn[0,:, :]  = ufn[1,:, :]
+    ufn[-1,:, :] = ufn[-2,:, :]
+    
+    # Lets take the average of the top and bottom and left/right boundary cells
     # apply the average to the boundary cells
+    # this ensures that the inflow at one side is equal to the outflow at the other side
+
     ufs[:,0,:]  = (ufs[:,0,:]+ufs[:,-1,:])/2
     ufs[:,-1,:] = ufs[:,0,:]     
     ufs[0,:,:]  = (ufs[0,:,:]+ufs[-1,:,:])/2
@@ -510,15 +513,15 @@ def sweep(Ct, Cu, mass, dt, Ts, ds, dn, us, un, w):
     ufn[-1,:,:] = ufn[0,:,:] 
 
     # now make sure that there is no gradients at the boundaries
-    ufs[:,1,:]  = ufs[:,0,:]
-    ufs[:,-2,:] = ufs[:,-1,:]
-    ufs[1,:,:]  = ufs[0,:,:]
-    ufs[-2,:,:] = ufs[-1,:,:]
+    # ufs[:,1,:]  = ufs[:,0,:]
+    # ufs[:,-2,:] = ufs[:,-1,:]
+    # ufs[1,:,:]  = ufs[0,:,:]
+    # ufs[-2,:,:] = ufs[-1,:,:]
 
-    ufn[:,1,:]  = ufn[:,0,:]
-    ufn[:,-2,:] = ufn[:,-1,:]
-    ufn[1,:,:]  = ufn[0,:,:]
-    ufn[-2,:,:] = ufn[-1,:,:]
+    # ufn[:,1,:]  = ufn[:,0,:]
+    # ufn[:,-2,:] = ufn[:,-1,:]
+    # ufn[1,:,:]  = ufn[0,:,:]
+    # ufn[-2,:,:] = ufn[-1,:,:]
 
     # ufn[:,:,:] = ufn[-2,:,:]
 
