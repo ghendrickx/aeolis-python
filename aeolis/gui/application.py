@@ -36,6 +36,7 @@ from aeolis.gui.utils import (
 # Import visualizers
 from aeolis.gui.visualizers.domain import DomainVisualizer
 from aeolis.gui.visualizers.wind import WindVisualizer
+from aeolis.gui.visualizers.output_2d import Output2DVisualizer
 
 try:
     import netCDF4
@@ -367,8 +368,9 @@ class AeolisGUI:
             self.nc_file_entry.delete(0, END)
             self.nc_file_entry.insert(0, file_path)
             
-            # Auto-load and plot the data
-            self.plot_nc_2d()
+            # Auto-load and plot the data using visualizer
+            if hasattr(self, 'output_2d_visualizer'):
+                self.output_2d_visualizer.load_and_plot()
 
     def load_new_config(self):
         """Load a new configuration file and update all fields"""
@@ -666,7 +668,8 @@ class AeolisGUI:
         self.variable_dropdown_2d = ttk.Combobox(file_frame, textvariable=self.variable_var_2d, 
                                         values=[], state='readonly', width=13)
         self.variable_dropdown_2d.grid(row=1, column=1, sticky=W, pady=2, padx=(0, 5))
-        self.variable_dropdown_2d.bind('<<ComboboxSelected>>', self.on_variable_changed_2d)
+        # Binding will be set after visualizer initialization
+        self.variable_dropdown_2d_needs_binding = True
 
         # Colorbar limits
         vmin_label = ttk.Label(file_frame, text="Color min:")
@@ -733,11 +736,11 @@ class AeolisGUI:
         export_button_frame.grid(row=6, column=1, columnspan=2, sticky=W, pady=5)
         
         export_png_btn = ttk.Button(export_button_frame, text="Export PNG", 
-                                    command=self.export_2d_plot_png)
+                                    command=lambda: self.output_2d_visualizer.export_png() if hasattr(self, 'output_2d_visualizer') else None)
         export_png_btn.pack(side=LEFT, padx=5)
         
         export_mp4_btn = ttk.Button(export_button_frame, text="Export Animation (MP4)", 
-                                    command=self.export_2d_animation_mp4)
+                                    command=lambda: self.output_2d_visualizer.export_animation_mp4() if hasattr(self, 'output_2d_visualizer') else None)
         export_mp4_btn.pack(side=LEFT, padx=5)
 
         # Create frame for visualization
@@ -772,6 +775,25 @@ class AeolisGUI:
                                      command=self.update_time_step)
         self.time_slider.pack(side=LEFT, fill=X, expand=1, padx=5)
         self.time_slider.set(0)
+        
+        # Initialize 2D output visualizer (after all UI components are created)
+        # Use a list to allow the visualizer to update the colorbar reference
+        self.output_colorbar_ref = [self.output_colorbar]
+        self.output_2d_visualizer = Output2DVisualizer(
+            self.output_ax, self.output_canvas, self.output_fig,
+            self.output_colorbar_ref, self.time_slider, self.time_label,
+            self.variable_var_2d, self.colormap_var, self.auto_limits_var,
+            self.vmin_entry, self.vmax_entry, self.overlay_veg_var,
+            self.nc_file_entry, self.variable_dropdown_2d,
+            self.get_config_dir, self.get_variable_label, self.get_variable_title
+        )
+        
+        # Now bind the dropdown to use the visualizer
+        self.variable_dropdown_2d.bind('<<ComboboxSelected>>', 
+                                      lambda e: self.output_2d_visualizer.on_variable_changed(e))
+        
+        # Update time slider command to use visualizer
+        self.time_slider.config(command=lambda v: self.output_2d_visualizer.update_plot())
 
     def create_plot_output_1d_tab(self, tab_control):
         # Create the 'Plot Output 1D' tab
@@ -1408,156 +1430,6 @@ class AeolisGUI:
             import traceback
             print(f"Failed to update overview: {str(e)}\n{traceback.format_exc()}")
 
-    def on_variable_changed_2d(self, event):
-        """Update plot when variable selection changes in 2D tab"""
-        if hasattr(self, 'nc_data_cache') and self.nc_data_cache is not None:
-            self.update_2d_plot()
-
-    def plot_nc_2d(self):
-        """Load NetCDF file and plot 2D data"""
-        if not HAVE_NETCDF:
-            messagebox.showerror("Error", "netCDF4 library is not available!")
-            return
-            
-        try:
-            # Get the NC file path
-            nc_file = self.nc_file_entry.get()
-            
-            if not nc_file:
-                messagebox.showwarning("Warning", "No NetCDF file specified!")
-                return
-            
-            # Get the directory of the config file to resolve relative paths
-            config_dir = os.path.dirname(configfile)
-            
-            # Load the NC file
-            if not os.path.isabs(nc_file):
-                nc_file_path = os.path.join(config_dir, nc_file)
-            else:
-                nc_file_path = nc_file
-                
-            if not os.path.exists(nc_file_path):
-                messagebox.showerror("Error", f"NetCDF file not found: {nc_file_path}")
-                return
-            
-            # Open NetCDF file and cache data
-            with netCDF4.Dataset(nc_file_path, 'r') as nc:
-                # Get available variables
-                available_vars = list(nc.variables.keys())
-                
-                # Try to get x and y coordinates
-                x_data = None
-                y_data = None
-                
-                if 'x' in nc.variables:
-                    x_data = nc.variables['x'][:]
-                if 'y' in nc.variables:
-                    y_data = nc.variables['y'][:]
-                
-                # Find all available 2D/3D variables (potential plot candidates)
-                # Exclude coordinate and metadata variables
-                coord_vars = {'x', 'y', 's', 'n', 'lat', 'lon', 'time', 'layers', 'fractions', 
-                             'x_bounds', 'y_bounds', 'lat_bounds', 'lon_bounds', 'time_bounds', 'crs', 'nv', 'nv2'}
-                candidate_vars = []
-                var_data_dict = {}
-                n_times = 1
-                
-                # Also load vegetation if checkbox is enabled
-                veg_data = None
-                
-                for var_name in available_vars:
-                    if var_name in coord_vars:
-                        continue
-                    
-                    var = nc.variables[var_name]
-                    
-                    # Check if time dimension exists
-                    if 'time' in var.dimensions:
-                        # Load all time steps
-                        var_data = var[:]
-                        # Need at least 3 dimensions: (time, n, s)
-                        if var_data.ndim < 3:
-                            continue  # Skip variables without spatial dimensions
-                        n_times = max(n_times, var_data.shape[0])
-                    else:
-                        # Single time step - validate shape
-                        # Need exactly 2 spatial dimensions: (n, s)
-                        if var.ndim != 2:
-                            continue  # Skip variables without 2D spatial dimensions
-                        var_data = var[:, :]
-                        var_data = np.expand_dims(var_data, axis=0)  # Add time dimension
-                    
-                    var_data_dict[var_name] = var_data
-                    candidate_vars.append(var_name)
-                
-                # Load vegetation data if requested
-                if self.overlay_veg_var.get():
-                    veg_candidates = ['rhoveg', 'vegetated', 'hveg', 'vegfac']
-                    for veg_name in veg_candidates:
-                        if veg_name in available_vars:
-                            veg_var = nc.variables[veg_name]
-                            if 'time' in veg_var.dimensions:
-                                veg_data = veg_var[:]
-                            else:
-                                veg_data = veg_var[:, :]
-                                veg_data = np.expand_dims(veg_data, axis=0)
-                            break
-                
-                # Check if any variables were loaded
-                if not var_data_dict:
-                    messagebox.showerror("Error", "No valid variables found in NetCDF file!")
-                    return
-                
-                # Add special combined option if both zb and rhoveg are available
-                if 'zb' in var_data_dict and 'rhoveg' in var_data_dict:
-                    candidate_vars.append('zb+rhoveg')
-                
-                # Add quiver plot option if wind velocity components are available
-                if 'ustarn' in var_data_dict and 'ustars' in var_data_dict:
-                    candidate_vars.append('ustar quiver')
-                
-                # Update variable dropdown with available variables
-                self.variable_dropdown_2d['values'] = sorted(candidate_vars)
-                # Set default to first variable (prefer 'zb' if available)
-                if 'zb' in candidate_vars:
-                    self.variable_var_2d.set('zb')
-                else:
-                    self.variable_var_2d.set(sorted(candidate_vars)[0])
-                
-                # Cache data for slider updates
-                self.nc_data_cache = {
-                    'vars': var_data_dict,
-                    'x': x_data,
-                    'y': y_data,
-                    'n_times': n_times,
-                    'available_vars': candidate_vars,
-                    'veg': veg_data
-                }
-            
-            # Configure the time slider
-            if n_times > 1:
-                self.time_slider.configure(from_=0, to=n_times-1)
-                self.time_slider.set(n_times - 1)  # Start with last time step
-            else:
-                self.time_slider.configure(from_=0, to=0)
-                self.time_slider.set(0)
-            
-            # Remember current output plot state
-            self.output_plot_state = {
-                'key': self.variable_var_2d.get(),
-                'label': self.get_variable_label(self.variable_var_2d.get()),
-                'title': self.get_variable_title(self.variable_var_2d.get())
-            }
-
-            # Plot the initial (last) time step
-            self.update_2d_plot()
-            
-        except Exception as e:
-            import traceback
-            error_msg = f"Failed to plot 2D data: {str(e)}\n\n{traceback.format_exc()}"
-            messagebox.showerror("Error", error_msg)
-            print(error_msg)  # Also print to console for debugging
-
     def get_variable_label(self, var_name):
         """
         Get axis label for variable.
@@ -1617,377 +1489,6 @@ class AeolisGUI:
                     base_title += f' (averaged over {n_fractions} fractions)'
         
         return base_title
-
-    def update_2d_plot(self):
-        """Update the 2D plot with current settings"""
-        if not hasattr(self, 'nc_data_cache') or self.nc_data_cache is None:
-            return
-        
-        try:
-            # Clear the previous plot
-            self.output_ax.clear()
-            
-            # Get time index from slider
-            time_idx = int(self.time_slider.get())
-            
-            # Get selected variable
-            var_name = self.variable_var_2d.get()
-            
-            # Special handling for zb+rhoveg combined visualization
-            if var_name == 'zb+rhoveg':
-                self.render_zb_rhoveg_shaded(time_idx)
-                return
-            
-            # Special handling for ustar quiver plot
-            if var_name == 'ustar quiver':
-                self.render_ustar_quiver(time_idx)
-                return
-            
-            # Check if variable exists in cache
-            if var_name not in self.nc_data_cache['vars']:
-                messagebox.showwarning("Warning", f"Variable '{var_name}' not found in NetCDF file!")
-                return
-            
-            # Get the data
-            var_data = self.nc_data_cache['vars'][var_name]
-            
-            # Check if variable has fractions dimension (4D: time, n, s, fractions)
-            if var_data.ndim == 4:
-                # Average across fractions or select first fraction
-                z_data = var_data[time_idx, :, :, :].mean(axis=2)  # Average across fractions
-            else:
-                z_data = var_data[time_idx, :, :]
-            
-            x_data = self.nc_data_cache['x']
-            y_data = self.nc_data_cache['y']
-            
-            # Get colorbar limits
-            vmin = None
-            vmax = None
-            if not self.auto_limits_var.get():
-                try:
-                    vmin_str = self.vmin_entry.get().strip()
-                    vmax_str = self.vmax_entry.get().strip()
-                    if vmin_str:
-                        vmin = float(vmin_str)
-                    if vmax_str:
-                        vmax = float(vmax_str)
-                except ValueError:
-                    pass  # Use auto limits if conversion fails
-            
-            # Get selected colormap
-            cmap = self.colormap_var.get()
-            
-            # Create the plot
-            if x_data is not None and y_data is not None:
-                # Use pcolormesh for 2D grid data with coordinates
-                im = self.output_ax.pcolormesh(x_data, y_data, z_data, shading='auto', 
-                                              cmap=cmap, vmin=vmin, vmax=vmax)
-                self.output_ax.set_xlabel('X (m)')
-                self.output_ax.set_ylabel('Y (m)')
-            else:
-                # Use imshow if no coordinate data available
-                im = self.output_ax.imshow(z_data, cmap=cmap, origin='lower', 
-                                          aspect='auto', vmin=vmin, vmax=vmax)
-                self.output_ax.set_xlabel('Grid X Index')
-                self.output_ax.set_ylabel('Grid Y Index')
-            
-            # Set title with time step
-            title = self.get_variable_title(var_name)
-            self.output_ax.set_title(f'{title} (Time step: {time_idx})')
-            
-            # Handle colorbar properly to avoid shrinking
-            if self.output_colorbar is not None:
-                try:
-                    # Update existing colorbar
-                    self.output_colorbar.update_normal(im)
-                    cbar_label = self.get_variable_label(var_name)
-                    self.output_colorbar.set_label(cbar_label)
-                except:
-                    # If update fails (e.g., colorbar was removed), create new one
-                    cbar_label = self.get_variable_label(var_name)
-                    self.output_colorbar = self.output_fig.colorbar(im, ax=self.output_ax, label=cbar_label)
-            else:
-                # Create new colorbar only on first run or after removal
-                cbar_label = self.get_variable_label(var_name)
-                self.output_colorbar = self.output_fig.colorbar(im, ax=self.output_ax, label=cbar_label)
-
-            # Overlay vegetation if enabled and available
-            if self.overlay_veg_var.get() and self.nc_data_cache['veg'] is not None:
-                veg_slice = self.nc_data_cache['veg']
-                if veg_slice.ndim == 3:
-                    veg_data = veg_slice[time_idx, :, :]
-                else:
-                    veg_data = veg_slice[:, :]
-
-                # Choose plotting method consistent with base plot
-                if x_data is not None and y_data is not None:
-                    self.output_ax.pcolormesh(x_data, y_data, veg_data, shading='auto', 
-                                              cmap='Greens', vmin=0, vmax=1, alpha=0.4)
-                else:
-                    self.output_ax.imshow(veg_data, cmap='Greens', origin='lower', 
-                                          aspect='auto', vmin=0, vmax=1, alpha=0.4)
-            
-            # Redraw the canvas
-            self.output_canvas.draw()
-            
-        except Exception as e:
-            import traceback
-            error_msg = f"Failed to update 2D plot: {str(e)}\n\n{traceback.format_exc()}"
-            print(error_msg)  # Print to console for debugging
-
-    def render_zb_rhoveg_shaded(self, time_idx):
-        """
-        Render zb+rhoveg combined visualization with hillshading and vegetation blending.
-        Inspired by Anim2D_ShadeVeg.py
-        """
-        try:
-            # Get zb and rhoveg data - check if they exist
-            if 'zb' not in self.nc_data_cache['vars']:
-                raise ValueError("Variable 'zb' not found in NetCDF cache")
-            if 'rhoveg' not in self.nc_data_cache['vars']:
-                raise ValueError("Variable 'rhoveg' not found in NetCDF cache")
-            
-            zb_data = self.nc_data_cache['vars']['zb']
-            veg_data = self.nc_data_cache['vars']['rhoveg']
-            
-            # Extract time slice
-            if zb_data.ndim == 4:
-                zb = zb_data[time_idx, :, :, :].mean(axis=2)
-            else:
-                zb = zb_data[time_idx, :, :]
-            
-            if veg_data.ndim == 4:
-                veg = veg_data[time_idx, :, :, :].mean(axis=2)
-            else:
-                veg = veg_data[time_idx, :, :]
-            
-            # Ensure zb and veg have the same shape
-            if zb.shape != veg.shape:
-                raise ValueError(f"Shape mismatch: zb={zb.shape}, veg={veg.shape}")
-            
-            # Get coordinates
-            x_data = self.nc_data_cache['x']
-            y_data = self.nc_data_cache['y']
-            
-            # Convert x, y to 1D arrays if needed
-            if x_data is not None and y_data is not None:
-                if x_data.ndim == 2:
-                    x1d = x_data[0, :].astype(float)
-                    y1d = y_data[:, 0].astype(float)
-                else:
-                    x1d = np.asarray(x_data, dtype=float).ravel()
-                    y1d = np.asarray(y_data, dtype=float).ravel()
-            else:
-                # Use indices if no coordinate data
-                x1d = np.arange(zb.shape[1], dtype=float)
-                y1d = np.arange(zb.shape[0], dtype=float)
-            
-            # Normalize vegetation to [0,1]
-            veg_max = np.nanmax(veg)
-            if veg_max is not None and veg_max > 0:
-                veg_norm = np.clip(veg / veg_max, 0.0, 1.0)
-            else:
-                veg_norm = np.clip(veg, 0.0, 1.0)
-            
-            # Replace any NaNs with 0
-            veg_norm = np.nan_to_num(veg_norm, nan=0.0)
-            
-            # Apply hillshade to topography
-            shaded = apply_hillshade(zb, x1d, y1d)
-            
-            # Define colors (from Anim2D_ShadeVeg.py)
-            sand = np.array([1.0, 239.0/255.0, 213.0/255.0])  # light sand
-            darkgreen = np.array([34/255, 139/255, 34/255])
-            ocean = np.array([70/255, 130/255, 180/255])  # steelblue
-            
-            # Create base color by blending sand and vegetation
-            # rgb shape: (ny, nx, 3)
-            rgb = sand[None, None, :] * (1.0 - veg_norm[..., None]) + darkgreen[None, None, :] * veg_norm[..., None]
-            
-            # Apply ocean mask: zb < OCEAN_DEPTH_THRESHOLD and x < OCEAN_DISTANCE_THRESHOLD
-            if x_data is not None:
-                X2d, _ = np.meshgrid(x1d, y1d)
-                ocean_mask = (zb < OCEAN_DEPTH_THRESHOLD) & (X2d < OCEAN_DISTANCE_THRESHOLD)
-                rgb[ocean_mask] = ocean
-            
-            # Apply hillshade to modulate colors
-            rgb *= shaded[..., None]
-            
-            # Clip to valid range
-            rgb = np.clip(rgb, 0.0, 1.0)
-            
-            # Plot the RGB image
-            if x_data is not None and y_data is not None:
-                extent = [x1d.min(), x1d.max(), y1d.min(), y1d.max()]
-                self.output_ax.imshow(rgb, origin='lower', extent=extent, interpolation='nearest', aspect='auto')
-                self.output_ax.set_xlabel('X (m)')
-                self.output_ax.set_ylabel('Y (m)')
-            else:
-                self.output_ax.imshow(rgb, origin='lower', interpolation='nearest', aspect='auto')
-                self.output_ax.set_xlabel('Grid X Index')
-                self.output_ax.set_ylabel('Grid Y Index')
-            
-            # Set title
-            title = self.get_variable_title('zb+rhoveg')
-            self.output_ax.set_title(f'{title} (Time step: {time_idx})')
-            
-            # Remove colorbar for RGB visualization
-            if self.output_colorbar is not None:
-                try:
-                    self.output_colorbar.remove()
-                except:
-                    # If remove() fails, try removing from figure
-                    try:
-                        self.output_fig.delaxes(self.output_colorbar.ax)
-                    except:
-                        pass
-                self.output_colorbar = None
-            
-            # Redraw the canvas
-            self.output_canvas.draw()
-            
-        except Exception as e:
-            import traceback
-            error_msg = f"Failed to render zb+rhoveg: {str(e)}\n\n{traceback.format_exc()}"
-            print(error_msg)
-            messagebox.showerror("Error", f"Failed to render zb+rhoveg visualization:\n{str(e)}")
-
-    def render_ustar_quiver(self, time_idx):
-        """
-        Render quiver plot of shear velocity vectors (ustars, ustarn) overlaid on ustar magnitude.
-        Background: color plot of ustar magnitude
-        Arrows: black vectors showing direction and magnitude
-        """
-        try:
-            # Get ustar component data - check if they exist
-            if 'ustars' not in self.nc_data_cache['vars']:
-                raise ValueError("Variable 'ustars' not found in NetCDF cache")
-            if 'ustarn' not in self.nc_data_cache['vars']:
-                raise ValueError("Variable 'ustarn' not found in NetCDF cache")
-            
-            ustars_data = self.nc_data_cache['vars']['ustars']
-            ustarn_data = self.nc_data_cache['vars']['ustarn']
-            
-            # Extract time slice
-            if ustars_data.ndim == 4:
-                ustars = ustars_data[time_idx, :, :, :].mean(axis=2)
-            else:
-                ustars = ustars_data[time_idx, :, :]
-            
-            if ustarn_data.ndim == 4:
-                ustarn = ustarn_data[time_idx, :, :, :].mean(axis=2)
-            else:
-                ustarn = ustarn_data[time_idx, :, :]
-            
-            # Calculate ustar magnitude from components
-            ustar = np.sqrt(ustars**2 + ustarn**2)
-            
-            # Get coordinates
-            x_data = self.nc_data_cache['x']
-            y_data = self.nc_data_cache['y']
-            
-            # Get colorbar limits
-            vmin = None
-            vmax = None
-            if not self.auto_limits_var.get():
-                try:
-                    vmin_str = self.vmin_entry.get().strip()
-                    vmax_str = self.vmax_entry.get().strip()
-                    if vmin_str:
-                        vmin = float(vmin_str)
-                    if vmax_str:
-                        vmax = float(vmax_str)
-                except ValueError:
-                    pass  # Use auto limits if conversion fails
-            
-            # Get selected colormap
-            cmap = self.colormap_var.get()
-            
-            # Plot the background ustar magnitude
-            if x_data is not None and y_data is not None:
-                # Use pcolormesh for 2D grid data with coordinates
-                im = self.output_ax.pcolormesh(x_data, y_data, ustar, shading='auto', 
-                                              cmap=cmap, vmin=vmin, vmax=vmax)
-                self.output_ax.set_xlabel('X (m)')
-                self.output_ax.set_ylabel('Y (m)')
-            else:
-                # Use imshow if no coordinate data available
-                im = self.output_ax.imshow(ustar, cmap=cmap, origin='lower', 
-                                          aspect='auto', vmin=vmin, vmax=vmax)
-                self.output_ax.set_xlabel('Grid X Index')
-                self.output_ax.set_ylabel('Grid Y Index')
-            
-            # Handle colorbar
-            if self.output_colorbar is not None:
-                try:
-                    self.output_colorbar.update_normal(im)
-                    self.output_colorbar.set_label('Shear Velocity (m/s)')
-                except:
-                    cbar_label = 'Shear Velocity (m/s)'
-                    self.output_colorbar = self.output_fig.colorbar(im, ax=self.output_ax, label=cbar_label)
-            else:
-                cbar_label = 'Shear Velocity (m/s)'
-                self.output_colorbar = self.output_fig.colorbar(im, ax=self.output_ax, label=cbar_label)
-            
-            # Create coordinate arrays for quiver
-            if x_data is not None and y_data is not None:
-                if x_data.ndim == 2:
-                    X = x_data
-                    Y = y_data
-                else:
-                    X, Y = np.meshgrid(x_data, y_data)
-            else:
-                # Use indices if no coordinate data
-                X, Y = np.meshgrid(np.arange(ustars.shape[1]), np.arange(ustars.shape[0]))
-            
-            # Filter out invalid vectors (NaN, zero magnitude)
-            valid = np.isfinite(ustars) & np.isfinite(ustarn)
-            magnitude = np.sqrt(ustars**2 + ustarn**2)
-            valid = valid & (magnitude > 1e-10)
-            
-            # Subsample for better visibility (every nth point)
-            subsample = max(1, min(ustars.shape[0], ustars.shape[1]) // SUBSAMPLE_RATE_DIVISOR)
-            
-            X_sub = X[::subsample, ::subsample]
-            Y_sub = Y[::subsample, ::subsample]
-            ustars_sub = ustars[::subsample, ::subsample]
-            ustarn_sub = ustarn[::subsample, ::subsample]
-            valid_sub = valid[::subsample, ::subsample]
-            
-            # Apply mask
-            X_plot = X_sub[valid_sub]
-            Y_plot = Y_sub[valid_sub]
-            U_plot = ustars_sub[valid_sub]
-            V_plot = ustarn_sub[valid_sub]
-            
-            # Overlay quiver plot with black arrows
-            if len(X_plot) > 0:
-                q = self.output_ax.quiver(X_plot, Y_plot, U_plot, V_plot,
-                                          color='black', scale=None, scale_units='xy',
-                                          angles='xy', pivot='mid', width=0.003)
-                
-                # Calculate reference vector magnitude for quiver key
-                magnitude_all = np.sqrt(U_plot**2 + V_plot**2)
-                if magnitude_all.max() > 0:
-                    ref_magnitude = magnitude_all.max() * 0.5
-                    qk = self.output_ax.quiverkey(q, 0.9, 0.95, ref_magnitude,
-                                                 f'{ref_magnitude:.3f} m/s',
-                                                 labelpos='E', coordinates='figure',
-                                                 color='black')
-            
-            # Set title
-            title = self.get_variable_title('ustar quiver')
-            self.output_ax.set_title(f'{title} (Time step: {time_idx})')
-            
-            # Redraw the canvas
-            self.output_canvas.draw()
-            
-        except Exception as e:
-            import traceback
-            error_msg = f"Failed to render ustar quiver: {str(e)}\n\n{traceback.format_exc()}"
-            print(error_msg)
-            messagebox.showerror("Error", f"Failed to render ustar quiver visualization:\n{str(e)}")
 
     def plot_nc_bed_level(self):
         """Plot bed level from NetCDF output file"""
@@ -2089,19 +1590,6 @@ class AeolisGUI:
             messagebox.showerror("Error", error_msg)
             print(error_msg)  # Also print to console for debugging
 
-    def update_time_step(self, value):
-        """Update the plot based on the time slider value"""
-        if self.nc_data_cache is None:
-            return
-        
-        # Get time index from slider
-        time_idx = int(float(value))
-        
-        # Update label
-        self.time_label.config(text=f"Time step: {time_idx}")
-        
-        # Update the 2D plot
-        self.update_2d_plot()
     def plot_nc_wind(self):
         """Plot shear velocity (ustar) from NetCDF output file (uses 'ustar' or computes from 'ustars' and 'ustarn')."""
         if not HAVE_NETCDF:
@@ -2285,114 +1773,6 @@ class AeolisGUI:
         self.overlay_veg_enabled = True
         current_time = int(self.time_slider.get())
         self.update_time_step(current_time)
-
-    def export_2d_plot_png(self):
-        """
-        Export the current 2D plot as a PNG image.
-        Opens a file dialog to choose save location.
-        """
-        if not hasattr(self, 'output_fig') or self.output_fig is None:
-            messagebox.showwarning("Warning", "No plot to export. Please load data first.")
-            return
-        
-        # Open file dialog for saving
-        file_path = filedialog.asksaveasfilename(
-            initialdir=self.get_config_dir(),
-            title="Save plot as PNG",
-            defaultextension=".png",
-            filetypes=(("PNG files", "*.png"), ("All files", "*.*"))
-        )
-        
-        if file_path:
-            try:
-                self.output_fig.savefig(file_path, dpi=300, bbox_inches='tight')
-                messagebox.showinfo("Success", f"Plot exported to:\n{file_path}")
-            except Exception as e:
-                error_msg = f"Failed to export plot: {str(e)}\n\n{traceback.format_exc()}"
-                messagebox.showerror("Error", error_msg)
-                print(error_msg)
-
-    def export_2d_animation_mp4(self):
-        """
-        Export the 2D plot as an MP4 animation over all time steps.
-        Requires matplotlib animation support and ffmpeg.
-        """
-        if not hasattr(self, 'nc_data_cache') or self.nc_data_cache is None:
-            messagebox.showwarning("Warning", "No data loaded. Please load NetCDF data first.")
-            return
-        
-        n_times = self.nc_data_cache.get('n_times', 1)
-        if n_times <= 1:
-            messagebox.showwarning("Warning", "Only one time step available. Animation requires multiple time steps.")
-            return
-        
-        # Open file dialog for saving
-        file_path = filedialog.asksaveasfilename(
-            initialdir=self.get_config_dir(),
-            title="Save animation as MP4",
-            defaultextension=".mp4",
-            filetypes=(("MP4 files", "*.mp4"), ("All files", "*.*"))
-        )
-        
-        if file_path:
-            try:
-                from matplotlib.animation import FuncAnimation, FFMpegWriter
-                
-                # Create progress dialog
-                progress_window = Toplevel(self.root)
-                progress_window.title("Exporting Animation")
-                progress_window.geometry("300x100")
-                progress_label = ttk.Label(progress_window, text="Creating animation...\nThis may take a few minutes.")
-                progress_label.pack(pady=20)
-                progress_bar = ttk.Progressbar(progress_window, mode='determinate', maximum=n_times)
-                progress_bar.pack(pady=10, padx=20, fill=X)
-                progress_window.update()
-                
-                # Get current slider position to restore later
-                original_time = int(self.time_slider.get())
-                
-                # Animation update function
-                def update_frame(frame_num):
-                    self.time_slider.set(frame_num)
-                    self.update_2d_plot()
-                    # Only update progress bar if window still exists
-                    if progress_window.winfo_exists():
-                        progress_bar['value'] = frame_num + 1
-                        progress_window.update()
-                    return []
-                
-                # Create animation
-                ani = FuncAnimation(self.output_fig, update_frame, frames=n_times, 
-                                   interval=200, blit=False, repeat=False)
-                
-                # Save animation
-                writer = FFMpegWriter(fps=5, bitrate=1800)
-                ani.save(file_path, writer=writer)
-                
-                # Stop and cleanup animation to prevent it from continuing
-                ani.event_source.stop()
-                del ani
-                
-                # Restore original time position
-                self.time_slider.set(original_time)
-                self.update_2d_plot()
-                
-                # Close progress window
-                if progress_window.winfo_exists():
-                    progress_window.destroy()
-                
-                messagebox.showinfo("Success", f"Animation exported to:\n{file_path}")
-                
-            except ImportError:
-                messagebox.showerror("Error", 
-                    "Animation export requires ffmpeg to be installed.\n\n"
-                    "Please install ffmpeg and ensure it's in your system PATH.")
-            except Exception as e:
-                error_msg = f"Failed to export animation: {str(e)}\n\n{traceback.format_exc()}"
-                messagebox.showerror("Error", error_msg)
-                print(error_msg)
-                if 'progress_window' in locals():
-                    progress_window.destroy()
 
     def export_1d_plot_png(self):
         """
