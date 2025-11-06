@@ -9,5 +9,6 @@ This package contains specialized visualizer modules for different types of data
 """
 
 from aeolis.gui.visualizers.domain import DomainVisualizer
+from aeolis.gui.visualizers.wind import WindVisualizer
 
-__all__ = ['DomainVisualizer']
+__all__ = ['DomainVisualizer', 'WindVisualizer']

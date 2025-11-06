@@ -35,6 +35,7 @@ from aeolis.gui.utils import (
 
 # Import visualizers
 from aeolis.gui.visualizers.domain import DomainVisualizer
+from aeolis.gui.visualizers.wind import WindVisualizer
 
 try:
     import netCDF4
@@ -519,208 +520,6 @@ class AeolisGUI:
             # Auto-load and plot the data
             self.load_and_plot_wind()
 
-    def load_and_plot_wind(self):
-        """Load wind file and plot time series and wind rose"""
-        try:
-            # Get the wind file path
-            wind_file = self.wind_file_entry.get()
-            
-            if not wind_file:
-                messagebox.showwarning("Warning", "No wind file specified!")
-                return
-            
-            # Get the directory of the config file to resolve relative paths
-            config_dir = self.get_config_dir()
-            
-            # Load the wind file
-            if not os.path.isabs(wind_file):
-                wind_file_path = os.path.join(config_dir, wind_file)
-            else:
-                wind_file_path = wind_file
-                
-            if not os.path.exists(wind_file_path):
-                messagebox.showerror("Error", f"Wind file not found: {wind_file_path}")
-                return
-            
-            # Check if we already loaded this file (avoid reloading)
-            if hasattr(self, 'wind_data_cache') and self.wind_data_cache.get('file_path') == wind_file_path:
-                # Data already loaded, just return (don't reload)
-                return
-            
-            # Load wind data (time, speed, direction)
-            wind_data = np.loadtxt(wind_file_path)
-            
-            # Check data format
-            if wind_data.ndim != 2 or wind_data.shape[1] < 3:
-                messagebox.showerror("Error", "Wind file must have at least 3 columns: time, speed, direction")
-                return
-            
-            time = wind_data[:, 0]
-            speed = wind_data[:, 1]
-            direction = wind_data[:, 2]
-            
-            # Get wind convention from config
-            wind_convention = self.dic.get('wind_convention', 'nautical')
-            
-            # Cache the wind data along with file path and convention
-            self.wind_data_cache = {
-                'file_path': wind_file_path,
-                'time': time,
-                'speed': speed,
-                'direction': direction,
-                'convention': wind_convention
-            }
-            
-            # Determine appropriate time unit based on simulation time (tstart and tstop)
-            tstart = 0
-            tstop = 0
-            use_sim_limits = False
-            
-            try:
-                tstart_entry = self.entries.get('tstart')
-                tstop_entry = self.entries.get('tstop')
-                
-                if tstart_entry and tstop_entry:
-                    tstart = float(tstart_entry.get() or 0)
-                    tstop = float(tstop_entry.get() or 0)
-                    if tstop > tstart:
-                        sim_duration = tstop - tstart  # in seconds
-                        use_sim_limits = True
-                    else:
-                        # If entries don't exist yet, use wind file time range
-                        sim_duration = time[-1] - time[0] if len(time) > 0 else 0
-                else:
-                    # If entries don't exist yet, use wind file time range
-                    sim_duration = time[-1] - time[0] if len(time) > 0 else 0
-            except (ValueError, AttributeError, TypeError):
-                # Fallback to wind file time range
-                sim_duration = time[-1] - time[0] if len(time) > 0 else 0
-            
-            # Choose appropriate time unit and convert using utility function
-            time_unit, time_divisor = determine_time_unit(sim_duration)
-            time_converted = time / time_divisor
-            
-            # Plot wind speed time series
-            self.wind_speed_ax.clear()
-            
-            # Plot data line FIRST
-            self.wind_speed_ax.plot(time_converted, speed, 'b-', linewidth=1.5, zorder=2, label='Wind Speed')
-            self.wind_speed_ax.set_xlabel(f'Time ({time_unit})')
-            self.wind_speed_ax.set_ylabel('Wind Speed (m/s)')
-            self.wind_speed_ax.set_title('Wind Speed Time Series')
-            self.wind_speed_ax.grid(True, alpha=0.3, zorder=1)
-            
-            # Calculate axis limits with 10% padding and add shading on top
-            if use_sim_limits:
-                tstart_converted = tstart / time_divisor
-                tstop_converted = tstop / time_divisor
-                axis_range = tstop_converted - tstart_converted
-                padding = 0.1 * axis_range
-                xlim_min = tstart_converted - padding
-                xlim_max = tstop_converted + padding
-                
-                self.wind_speed_ax.set_xlim([xlim_min, xlim_max])
-                
-                # Plot shading AFTER data line (on top) with higher transparency
-                self.wind_speed_ax.axvspan(xlim_min, tstart_converted, alpha=0.15, color='gray', zorder=3)
-                self.wind_speed_ax.axvspan(tstop_converted, xlim_max, alpha=0.15, color='gray', zorder=3)
-                
-                # Add legend entry for shaded region
-                import matplotlib.patches as mpatches
-                shaded_patch = mpatches.Patch(color='gray', alpha=0.15, label='Outside simulation time')
-                self.wind_speed_ax.legend(handles=[shaded_patch], loc='upper right', fontsize=8)
-            
-            # Plot wind direction time series
-            self.wind_dir_ax.clear()
-            
-            # Plot data line FIRST
-            self.wind_dir_ax.plot(time_converted, direction, 'r-', linewidth=1.5, zorder=2, label='Wind Direction')
-            self.wind_dir_ax.set_xlabel(f'Time ({time_unit})')
-            self.wind_dir_ax.set_ylabel('Wind Direction (degrees)')
-            self.wind_dir_ax.set_title(f'Wind Direction Time Series ({wind_convention} convention)')
-            self.wind_dir_ax.set_ylim([0, 360])
-            self.wind_dir_ax.grid(True, alpha=0.3, zorder=1)
-            
-            # Add shading on top
-            if use_sim_limits:
-                self.wind_dir_ax.set_xlim([xlim_min, xlim_max])
-                
-                # Plot shading AFTER data line (on top) with higher transparency
-                self.wind_dir_ax.axvspan(xlim_min, tstart_converted, alpha=0.15, color='gray', zorder=3)
-                self.wind_dir_ax.axvspan(tstop_converted, xlim_max, alpha=0.15, color='gray', zorder=3)
-                
-                # Add legend entry for shaded region
-                import matplotlib.patches as mpatches
-                shaded_patch = mpatches.Patch(color='gray', alpha=0.15, label='Outside simulation time')
-                self.wind_dir_ax.legend(handles=[shaded_patch], loc='upper right', fontsize=8)
-            
-            # Redraw time series canvas
-            self.wind_ts_canvas.draw()
-            
-            # Plot wind rose
-            self.plot_windrose(speed, direction, wind_convention)
-            
-        except Exception as e:
-            error_msg = f"Failed to load and plot wind data: {str(e)}\n\n{traceback.format_exc()}"
-            messagebox.showerror("Error", error_msg)
-            print(error_msg)
-
-    def force_reload_wind(self):
-        """Force reload of wind data by clearing cache"""
-        # Clear the cache to force reload
-        if hasattr(self, 'wind_data_cache'):
-            delattr(self, 'wind_data_cache')
-        # Now load and plot
-        self.load_and_plot_wind()
-
-    def plot_windrose(self, speed, direction, convention='nautical'):
-        """Plot wind rose diagram
-        
-        Parameters
-        ----------
-        speed : array
-            Wind speed values
-        direction : array
-            Wind direction values in degrees (as stored in wind file)
-        convention : str
-            'nautical' (0° = North, clockwise, already in meteorological convention)
-            'cartesian' (0° = East, will be converted to meteorological using 270 - direction)
-        """
-        try:
-            # Clear the windrose figure
-            self.windrose_fig.clear()
-            
-            # Convert direction based on convention to meteorological standard (0° = North, clockwise)
-            if convention == 'cartesian':
-                # Cartesian in AeoLiS: 0° = shore normal (East-like direction)
-                # Convert to meteorological: met = 270 - cart (as done in wind.py)
-                direction_met = (270 - direction) % 360
-            else:
-                # Already in meteorological/nautical convention (0° = North, clockwise)
-                direction_met = direction
-            
-            # Create windrose axes - simple and clean like in the notebook
-            ax = WindroseAxes.from_ax(fig=self.windrose_fig)
-            
-            # Plot wind rose - windrose library handles everything
-            ax.bar(direction_met, speed, normed=True, opening=0.8, edgecolor='white')
-            ax.set_legend(title='Wind Speed (m/s)')
-            ax.set_title(f'Wind Rose ({convention} convention)', fontsize=14, fontweight='bold')
-            
-            # Redraw windrose canvas
-            self.windrose_canvas.draw()
-            
-        except Exception as e:
-            error_msg = f"Failed to plot wind rose: {str(e)}\n\n{traceback.format_exc()}"
-            print(error_msg)
-            # Create a simple text message instead
-            self.windrose_fig.clear()
-            ax = self.windrose_fig.add_subplot(111)
-            ax.text(0.5, 0.5, 'Wind rose plot failed.\nSee console for details.', 
-                   ha='center', va='center', transform=ax.transAxes)
-            ax.axis('off')
-            self.windrose_canvas.draw()
-
     def create_wind_input_tab(self, tab_control):
         """Create the 'Wind Input' tab with wind data visualization"""
         tab_wind = ttk.Frame(tab_control)
@@ -745,26 +544,6 @@ class AeolisGUI:
         wind_browse_btn = ttk.Button(file_frame, text="Browse...", 
                                      command=self.browse_wind_file)
         wind_browse_btn.grid(row=0, column=2, sticky=W, pady=2)
-
-        # Load button (forces reload by clearing cache)
-        wind_load_btn = ttk.Button(file_frame, text="Load & Plot", 
-                                   command=self.force_reload_wind)
-        wind_load_btn.grid(row=0, column=3, sticky=W, pady=2, padx=5)
-
-        # Export buttons for wind plots
-        export_label_wind = ttk.Label(file_frame, text="Export:")
-        export_label_wind.grid(row=1, column=0, sticky=W, pady=5)
-        
-        export_button_frame_wind = ttk.Frame(file_frame)
-        export_button_frame_wind.grid(row=1, column=1, columnspan=3, sticky=W, pady=5)
-        
-        export_wind_ts_btn = ttk.Button(export_button_frame_wind, text="Export Time Series PNG", 
-                                        command=self.export_wind_timeseries_png)
-        export_wind_ts_btn.pack(side=LEFT, padx=5)
-        
-        export_windrose_btn = ttk.Button(export_button_frame_wind, text="Export Wind Rose PNG", 
-                                         command=self.export_windrose_png)
-        export_windrose_btn.pack(side=LEFT, padx=5)
 
         # Create frame for time series plots
         timeseries_frame = ttk.LabelFrame(tab_wind, text="Wind Time Series", padding=10)
@@ -797,6 +576,37 @@ class AeolisGUI:
         self.windrose_canvas = FigureCanvasTkAgg(self.windrose_fig, master=windrose_frame)
         self.windrose_canvas.draw()
         self.windrose_canvas.get_tk_widget().pack(side=TOP, fill=BOTH, expand=1)
+        
+        # Initialize wind visualizer
+        self.wind_visualizer = WindVisualizer(
+            self.wind_speed_ax, self.wind_dir_ax, self.wind_ts_canvas, self.wind_ts_fig,
+            self.windrose_fig, self.windrose_canvas,
+            lambda: self.wind_file_entry,  # get_wind_file function
+            lambda: self.entries,           # get_entries function
+            self.get_config_dir,            # get_config_dir function
+            lambda: self.dic                # get_dic function
+        )
+        
+        # Now add buttons that use the visualizer
+        # Load button (forces reload by clearing cache)
+        wind_load_btn = ttk.Button(file_frame, text="Load & Plot", 
+                                   command=self.wind_visualizer.force_reload)
+        wind_load_btn.grid(row=0, column=3, sticky=W, pady=2, padx=5)
+
+        # Export buttons for wind plots
+        export_label_wind = ttk.Label(file_frame, text="Export:")
+        export_label_wind.grid(row=1, column=0, sticky=W, pady=5)
+        
+        export_button_frame_wind = ttk.Frame(file_frame)
+        export_button_frame_wind.grid(row=1, column=1, columnspan=3, sticky=W, pady=5)
+        
+        export_wind_ts_btn = ttk.Button(export_button_frame_wind, text="Export Time Series PNG", 
+                                        command=self.wind_visualizer.export_timeseries_png)
+        export_wind_ts_btn.pack(side=LEFT, padx=5)
+        
+        export_windrose_btn = ttk.Button(export_button_frame_wind, text="Export Wind Rose PNG", 
+                                         command=self.wind_visualizer.export_windrose_png)
+        export_windrose_btn.pack(side=LEFT, padx=5)
 
     def create_timeframe_tab(self, tab_control):
         # Create the 'Timeframe' tab
@@ -2475,58 +2285,6 @@ class AeolisGUI:
         self.overlay_veg_enabled = True
         current_time = int(self.time_slider.get())
         self.update_time_step(current_time)
-
-    def export_wind_timeseries_png(self):
-        """
-        Export the wind time series plot as a PNG image.
-        Opens a file dialog to choose save location.
-        """
-        if not hasattr(self, 'wind_ts_fig') or self.wind_ts_fig is None:
-            messagebox.showwarning("Warning", "No wind plot to export. Please load wind data first.")
-            return
-        
-        # Open file dialog for saving
-        file_path = filedialog.asksaveasfilename(
-            initialdir=self.get_config_dir(),
-            title="Save wind time series as PNG",
-            defaultextension=".png",
-            filetypes=(("PNG files", "*.png"), ("All files", "*.*"))
-        )
-        
-        if file_path:
-            try:
-                self.wind_ts_fig.savefig(file_path, dpi=300, bbox_inches='tight')
-                messagebox.showinfo("Success", f"Wind time series exported to:\n{file_path}")
-            except Exception as e:
-                error_msg = f"Failed to export plot: {str(e)}\n\n{traceback.format_exc()}"
-                messagebox.showerror("Error", error_msg)
-                print(error_msg)
-
-    def export_windrose_png(self):
-        """
-        Export the wind rose plot as a PNG image.
-        Opens a file dialog to choose save location.
-        """
-        if not hasattr(self, 'windrose_fig') or self.windrose_fig is None:
-            messagebox.showwarning("Warning", "No wind rose plot to export. Please load wind data first.")
-            return
-        
-        # Open file dialog for saving
-        file_path = filedialog.asksaveasfilename(
-            initialdir=self.get_config_dir(),
-            title="Save wind rose as PNG",
-            defaultextension=".png",
-            filetypes=(("PNG files", "*.png"), ("All files", "*.*"))
-        )
-        
-        if file_path:
-            try:
-                self.windrose_fig.savefig(file_path, dpi=300, bbox_inches='tight')
-                messagebox.showinfo("Success", f"Wind rose exported to:\n{file_path}")
-            except Exception as e:
-                error_msg = f"Failed to export plot: {str(e)}\n\n{traceback.format_exc()}"
-                messagebox.showerror("Error", error_msg)
-                print(error_msg)
 
     def export_2d_plot_png(self):
         """
