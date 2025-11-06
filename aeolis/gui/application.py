@@ -140,7 +140,9 @@ class AeolisGUI:
                 # Only auto-plot if all three files are specified (not empty)
                 if xgrid_val and ygrid_val and bed_val:
                     try:
-                        self.plot_data('bed_file', 'Bed Elevation')
+                        # Check if domain_visualizer exists (tab may not be created yet)
+                        if hasattr(self, 'domain_visualizer'):
+                            self.domain_visualizer.plot_data('bed_file', 'Bed Elevation')
                     except Exception as e:
                         # Silently fail if plotting doesn't work (e.g., files don't exist)
                         pass
