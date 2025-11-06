@@ -7,8 +7,8 @@ and visualizing AeoLiS aeolian sediment transport model results.
 The main entry point is launch_gui() which creates and runs the GUI application.
 """
 
-# Import from the gui_app_backup module within the gui package
-from aeolis.gui.gui_app_backup import AeolisGUI, configfile, dic
+# Import from the application module within the gui package
+from aeolis.gui.application import AeolisGUI, configfile, dic
 from aeolis.gui.main import launch_gui
 
 __all__ = ['launch_gui', 'AeolisGUI', 'configfile', 'dic']
