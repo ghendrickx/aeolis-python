@@ -116,14 +116,7 @@ def read_configfile(configfile, parse_files=True, load_defaults=True):
 
     # set default for nsavetimes, if not given
     if 'nsavetimes' in p and not p['nsavetimes']:
-        p['nsavetimes'] = int(p['dzb_interval']/p['dt'])
-
-    # catch some incompatible parameter combinations.
-    if (p['ne_file'] is None) and (p['process_avalanche'] == True):
-        print('Please provide a valid ne_file path in the configuration file when using Avalanching.')
-        print('Code does not proceed until this is provided.')
-        print('Hint: If you do not have a ne_file, you can create one with all zeros, with the same dimensions as your grid.')        
-        exit("Exiting due to error")       
+        p['nsavetimes'] = int(p['dzb_interval']/p['dt'])   
     
     return p
 
@@ -160,7 +153,7 @@ def write_configfile(configfile, p=None):
     if p is None:
         p = DEFAULT_CONFIG.copy()
 
-    fmt = '%%%ds = %%s\n' % np.max([len(k) for k in p.iterkeys()])
+    fmt = '%%%ds = %%s\n' % np.max([len(k) for k in p.keys()])
         
     with open(configfile, 'w') as fp:
 
@@ -170,7 +163,7 @@ def write_configfile(configfile, p=None):
         fp.write('%s\n' % ('%' * 70))
         fp.write('\n')
         
-        for k, v in sorted(p.iteritems()):
+        for k, v in sorted(p.items()):
             if k.endswith('_file') and isiterable(v):
                 fname = '%s.txt' % k.replace('_file', '')
                 backup(fname)
@@ -285,9 +278,9 @@ def parse_value(val, parse_files=True, force_list=False):
         return np.asarray([parse_value(x) for x in val.split(' ')])
     elif re.match('^[TF]$', val):
         return val == 'T'
-    elif re.match('^-?\d+$', val):
+    elif re.match(r'^-?\d+$', val):
         return int(val)
-    elif re.match('^-?[\d\.]+$', val):
+    elif re.match(r'^-?[\d.]+$', val):
         return float(val)
     elif re.match('None', val):
         return None
