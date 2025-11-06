@@ -7,7 +7,7 @@ This module provides a comprehensive GUI for:
 - Plotting wind input data and wind roses
 - Visualizing model output (2D and 1D transects)
 
-Note: This is the legacy monolithic module. For new development, see aeolis.gui package.
+This is the main application module that coordinates the GUI and visualizers.
 """
 
 import aeolis
@@ -32,6 +32,9 @@ from aeolis.gui.utils import (
     resolve_file_path, make_relative_path, determine_time_unit,
     extract_time_slice, apply_hillshade
 )
+
+# Import visualizers
+from aeolis.gui.visualizers.domain import DomainVisualizer
 
 try:
     import netCDF4
@@ -259,26 +262,38 @@ class AeolisGUI:
         self.canvas = FigureCanvasTkAgg(self.fig, master=viz_frame)
         self.canvas.draw()
         self.canvas.get_tk_widget().pack(side=TOP, fill=BOTH, expand=1)
+        
+        # Initialize domain visualizer
+        self.domain_visualizer = DomainVisualizer(
+            self.ax, self.canvas, self.fig,
+            lambda: self.entries,  # get_entries function
+            self.get_config_dir    # get_config_dir function
+        )
 
         # Create a frame for buttons
         button_frame = ttk.Frame(viz_frame)
         button_frame.pack(pady=5)
 
-        # Create plot buttons
-        bed_button = ttk.Button(button_frame, text="Plot Bed", command=lambda: self.plot_data('bed_file', 'Bed Elevation'))
+        # Create plot buttons - delegate to domain visualizer
+        bed_button = ttk.Button(button_frame, text="Plot Bed", 
+                               command=lambda: self.domain_visualizer.plot_data('bed_file', 'Bed Elevation'))
         bed_button.grid(row=0, column=0, padx=5)
         
-        ne_button = ttk.Button(button_frame, text="Plot Ne", command=lambda: self.plot_data('ne_file', 'Ne'))
+        ne_button = ttk.Button(button_frame, text="Plot Ne", 
+                              command=lambda: self.domain_visualizer.plot_data('ne_file', 'Ne'))
         ne_button.grid(row=0, column=1, padx=5)
         
-        veg_button = ttk.Button(button_frame, text="Plot Vegetation", command=lambda: self.plot_data('veg_file', 'Vegetation'))
+        veg_button = ttk.Button(button_frame, text="Plot Vegetation", 
+                               command=lambda: self.domain_visualizer.plot_data('veg_file', 'Vegetation'))
         veg_button.grid(row=0, column=2, padx=5)
         
-        combined_button = ttk.Button(button_frame, text="Bed + Vegetation", command=self.plot_combined)
+        combined_button = ttk.Button(button_frame, text="Bed + Vegetation", 
+                                    command=self.domain_visualizer.plot_combined)
         combined_button.grid(row=0, column=3, padx=5)
         
         # Add export button for domain visualization
-        export_domain_button = ttk.Button(button_frame, text="Export PNG", command=self.export_domain_plot_png)
+        export_domain_button = ttk.Button(button_frame, text="Export PNG", 
+                                         command=self.domain_visualizer.export_png)
         export_domain_button.grid(row=0, column=4, padx=5)
 
     def browse_file(self, entry_widget):
@@ -2162,259 +2177,6 @@ class AeolisGUI:
             print(error_msg)
             messagebox.showerror("Error", f"Failed to render ustar quiver visualization:\n{str(e)}")
 
-    def _load_grid_data(self, xgrid_file, ygrid_file, config_dir):
-        """
-        Load x and y grid data if available.
-        
-        Parameters
-        ----------
-        xgrid_file : str
-            Path to x-grid file (may be relative or absolute)
-        ygrid_file : str
-            Path to y-grid file (may be relative or absolute)
-        config_dir : str
-            Base directory for resolving relative paths
-            
-        Returns
-        -------
-        tuple
-            (x_data, y_data) numpy arrays or (None, None) if not available
-        """
-        x_data = None
-        y_data = None
-        
-        if xgrid_file:
-            xgrid_file_path = resolve_file_path(xgrid_file, config_dir)
-            if xgrid_file_path and os.path.exists(xgrid_file_path):
-                x_data = np.loadtxt(xgrid_file_path)
-        
-        if ygrid_file:
-            ygrid_file_path = resolve_file_path(ygrid_file, config_dir)
-            if ygrid_file_path and os.path.exists(ygrid_file_path):
-                y_data = np.loadtxt(ygrid_file_path)
-        
-        return x_data, y_data
-
-    def _get_colormap_and_label(self, file_key):
-        """
-        Get appropriate colormap and label for a given file type.
-        
-        Parameters
-        ----------
-        file_key : str
-            File type key ('bed_file', 'ne_file', 'veg_file', etc.)
-            
-        Returns
-        -------
-        tuple
-            (colormap_name, label_text)
-        """
-        colormap_config = {
-            'bed_file': ('terrain', 'Elevation (m)'),
-            'ne_file': ('viridis', 'Ne'),
-            'veg_file': ('Greens', 'Vegetation'),
-        }
-        return colormap_config.get(file_key, ('viridis', 'Value'))
-
-    def _update_or_create_colorbar(self, im, label, fig, ax):
-        """
-        Update existing colorbar or create a new one.
-        
-        Parameters
-        ----------
-        im : mappable
-            The image/mesh object returned by pcolormesh or imshow
-        label : str
-            Colorbar label
-        fig : Figure
-            Matplotlib figure
-        ax : Axes
-            Matplotlib axes
-            
-        Returns
-        -------
-        Colorbar
-            The updated or newly created colorbar
-        """
-        if self.colorbar is not None:
-            try:
-                # Update existing colorbar
-                self.colorbar.update_normal(im)
-                self.colorbar.set_label(label)
-                return self.colorbar
-            except:
-                # If update fails, create new one
-                pass
-        
-        # Create new colorbar
-        return fig.colorbar(im, ax=ax, label=label)
-
-    def plot_data(self, file_key, title):
-        """
-        Plot data from specified file (bed_file, ne_file, or veg_file).
-        
-        Parameters
-        ----------
-        file_key : str
-            Key for the file entry in self.entries (e.g., 'bed_file', 'ne_file', 'veg_file')
-        title : str
-            Plot title
-            
-        Raises
-        ------
-        FileNotFoundError
-            If the specified file doesn't exist
-        ValueError
-            If file format is invalid
-        """
-        try:
-            # Clear the previous plot
-            self.ax.clear()
-            
-            # Get the file paths from the entries
-            xgrid_file = self.entries['xgrid_file'].get()
-            ygrid_file = self.entries['ygrid_file'].get()
-            data_file = self.entries[file_key].get()
-            
-            # Check if files are specified
-            if not data_file:
-                messagebox.showwarning("Warning", f"No {file_key} specified!")
-                return
-            
-            # Get the directory of the config file to resolve relative paths
-            config_dir = self.get_config_dir()
-            
-            # Load the data file
-            data_file_path = resolve_file_path(data_file, config_dir)
-            if not data_file_path or not os.path.exists(data_file_path):
-                messagebox.showerror("Error", f"File not found: {data_file_path}")
-                return
-            
-            # Load data
-            z_data = np.loadtxt(data_file_path)
-            
-            # Try to load x and y grid data if available
-            x_data, y_data = self._load_grid_data(xgrid_file, ygrid_file, config_dir)
-            
-            # Choose colormap based on data type
-            cmap, label = self._get_colormap_and_label(file_key)
-            
-            # Create the plot
-            if x_data is not None and y_data is not None:
-                # Use pcolormesh for 2D grid data with coordinates
-                im = self.ax.pcolormesh(x_data, y_data, z_data, shading='auto', cmap=cmap)
-                self.ax.set_xlabel('X (m)')
-                self.ax.set_ylabel('Y (m)')
-            else:
-                # Use imshow if no coordinate data available
-                im = self.ax.imshow(z_data, cmap=cmap, origin='lower', aspect='auto')
-                self.ax.set_xlabel('Grid X Index')
-                self.ax.set_ylabel('Grid Y Index')
-            
-            self.ax.set_title(title)
-            
-            # Handle colorbar properly to avoid shrinking
-            self.colorbar = self._update_or_create_colorbar(im, label, self.fig, self.ax)
-
-            # Enforce equal aspect ratio in domain visualization
-            self.ax.set_aspect('equal', adjustable='box')
-            
-            # Redraw the canvas
-            self.canvas.draw()
-            
-        except Exception as e:
-            error_msg = f"Failed to plot {file_key}: {str(e)}\n\n{traceback.format_exc()}"
-            messagebox.showerror("Error", error_msg)
-            print(error_msg)  # Also print to console for debugging
-
-    def plot_combined(self):
-        """Plot bed elevation with vegetation overlay"""
-        try:
-            # Clear the previous plot
-            self.ax.clear()
-            
-            # Get the file paths from the entries
-            xgrid_file = self.entries['xgrid_file'].get()
-            ygrid_file = self.entries['ygrid_file'].get()
-            bed_file = self.entries['bed_file'].get()
-            veg_file = self.entries['veg_file'].get()
-            
-            # Check if files are specified
-            if not bed_file:
-                messagebox.showwarning("Warning", "No bed_file specified!")
-                return
-            if not veg_file:
-                messagebox.showwarning("Warning", "No veg_file specified!")
-                return
-            
-            # Get the directory of the config file to resolve relative paths
-            config_dir = self.get_config_dir()
-            
-            # Load the bed file
-            bed_file_path = resolve_file_path(bed_file, config_dir)
-            if not bed_file_path or not os.path.exists(bed_file_path):
-                messagebox.showerror("Error", f"Bed file not found: {bed_file_path}")
-                return
-            
-            # Load the vegetation file
-            veg_file_path = resolve_file_path(veg_file, config_dir)
-            if not veg_file_path or not os.path.exists(veg_file_path):
-                messagebox.showerror("Error", f"Vegetation file not found: {veg_file_path}")
-                return
-            
-            # Load data
-            bed_data = np.loadtxt(bed_file_path)
-            veg_data = np.loadtxt(veg_file_path)
-            
-            # Try to load x and y grid data if available
-            x_data, y_data = self._load_grid_data(xgrid_file, ygrid_file, config_dir)
-            
-            # Create the bed elevation plot
-            if x_data is not None and y_data is not None:
-                # Use pcolormesh for 2D grid data with coordinates
-                im = self.ax.pcolormesh(x_data, y_data, bed_data, shading='auto', cmap='terrain')
-                self.ax.set_xlabel('X (m)')
-                self.ax.set_ylabel('Y (m)')
-                
-                # Overlay vegetation as contours where vegetation exists
-                veg_mask = veg_data > 0
-                if np.any(veg_mask):
-                    # Create contour lines for vegetation
-                    contour = self.ax.contour(x_data, y_data, veg_data, levels=[0.5], 
-                                             colors='darkgreen', linewidths=2)
-                    # Fill vegetation areas with semi-transparent green
-                    contourf = self.ax.contourf(x_data, y_data, veg_data, levels=[0.5, veg_data.max()], 
-                                               colors=['green'], alpha=0.3)
-            else:
-                # Use imshow if no coordinate data available
-                im = self.ax.imshow(bed_data, cmap='terrain', origin='lower', aspect='auto')
-                self.ax.set_xlabel('Grid X Index')
-                self.ax.set_ylabel('Grid Y Index')
-                
-                # Overlay vegetation
-                veg_mask = veg_data > 0
-                if np.any(veg_mask):
-                    # Create a masked array for vegetation overlay
-                    veg_overlay = np.ma.masked_where(~veg_mask, veg_data)
-                    self.ax.imshow(veg_overlay, cmap='Greens', origin='lower', aspect='auto', alpha=0.5)
-            
-            self.ax.set_title('Bed Elevation with Vegetation')
-            
-            # Handle colorbar properly to avoid shrinking
-            self.colorbar = self._update_or_create_colorbar(im, 'Elevation (m)', self.fig, self.ax)
-
-            # Enforce equal aspect ratio in domain visualization
-            self.ax.set_aspect('equal', adjustable='box')
-            
-            # Redraw the canvas
-            self.canvas.draw()
-            
-        except Exception as e:
-            import traceback
-            error_msg = f"Failed to plot combined view: {str(e)}\n\n{traceback.format_exc()}"
-            messagebox.showerror("Error", error_msg)
-            print(error_msg)  # Also print to console for debugging
-
     def plot_nc_bed_level(self):
         """Plot bed level from NetCDF output file"""
         if not HAVE_NETCDF:
@@ -2759,32 +2521,6 @@ class AeolisGUI:
             try:
                 self.windrose_fig.savefig(file_path, dpi=300, bbox_inches='tight')
                 messagebox.showinfo("Success", f"Wind rose exported to:\n{file_path}")
-            except Exception as e:
-                error_msg = f"Failed to export plot: {str(e)}\n\n{traceback.format_exc()}"
-                messagebox.showerror("Error", error_msg)
-                print(error_msg)
-
-    def export_domain_plot_png(self):
-        """
-        Export the current domain visualization plot as a PNG image.
-        Opens a file dialog to choose save location.
-        """
-        if not hasattr(self, 'fig') or self.fig is None:
-            messagebox.showwarning("Warning", "No plot to export. Please plot data first.")
-            return
-        
-        # Open file dialog for saving
-        file_path = filedialog.asksaveasfilename(
-            initialdir=self.get_config_dir(),
-            title="Save plot as PNG",
-            defaultextension=".png",
-            filetypes=(("PNG files", "*.png"), ("All files", "*.*"))
-        )
-        
-        if file_path:
-            try:
-                self.fig.savefig(file_path, dpi=300, bbox_inches='tight')
-                messagebox.showinfo("Success", f"Plot exported to:\n{file_path}")
             except Exception as e:
                 error_msg = f"Failed to export plot: {str(e)}\n\n{traceback.format_exc()}"
                 messagebox.showerror("Error", error_msg)
