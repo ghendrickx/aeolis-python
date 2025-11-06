@@ -2859,8 +2859,10 @@ class AeolisGUI:
                 def update_frame(frame_num):
                     self.time_slider.set(frame_num)
                     self.update_2d_plot()
-                    progress_bar['value'] = frame_num + 1
-                    progress_window.update()
+                    # Only update progress bar if window still exists
+                    if progress_window.winfo_exists():
+                        progress_bar['value'] = frame_num + 1
+                        progress_window.update()
                     return []
                 
                 # Create animation
@@ -2871,12 +2873,17 @@ class AeolisGUI:
                 writer = FFMpegWriter(fps=5, bitrate=1800)
                 ani.save(file_path, writer=writer)
                 
+                # Stop and cleanup animation to prevent it from continuing
+                ani.event_source.stop()
+                del ani
+                
                 # Restore original time position
                 self.time_slider.set(original_time)
                 self.update_2d_plot()
                 
                 # Close progress window
-                progress_window.destroy()
+                if progress_window.winfo_exists():
+                    progress_window.destroy()
                 
                 messagebox.showinfo("Success", f"Animation exported to:\n{file_path}")
                 
@@ -2960,8 +2967,10 @@ class AeolisGUI:
                 def update_frame(frame_num):
                     self.time_slider_1d.set(frame_num)
                     self.update_1d_plot()
-                    progress_bar['value'] = frame_num + 1
-                    progress_window.update()
+                    # Only update progress bar if window still exists
+                    if progress_window.winfo_exists():
+                        progress_bar['value'] = frame_num + 1
+                        progress_window.update()
                     return []
                 
                 # Create animation
@@ -2972,12 +2981,17 @@ class AeolisGUI:
                 writer = FFMpegWriter(fps=5, bitrate=1800)
                 ani.save(file_path, writer=writer)
                 
+                # Stop and cleanup animation to prevent it from continuing
+                ani.event_source.stop()
+                del ani
+                
                 # Restore original time position
                 self.time_slider_1d.set(original_time)
                 self.update_1d_plot()
                 
                 # Close progress window
-                progress_window.destroy()
+                if progress_window.winfo_exists():
+                    progress_window.destroy()
                 
                 messagebox.showinfo("Success", f"Animation exported to:\n{file_path}")
                 

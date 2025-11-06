@@ -7,15 +7,6 @@ be refactored to use the modular package structure.
 """
 
 from tkinter import Tk
-from aeolis.constants import DEFAULT_CONFIG
-
-# For now, import from the legacy monolithic module
-# TODO: Refactor to use modular structure
-import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from aeolis.gui import AeolisGUI, configfile, dic
-
 
 def launch_gui():
     """
@@ -25,6 +16,9 @@ def launch_gui():
     -------
     None
     """
+    # Import here to avoid circular imports
+    from aeolis.gui import AeolisGUI, dic
+    
     # Create the main application window
     root = Tk()
     
