@@ -67,6 +67,45 @@ NC_COORD_VARS = {
     'crs', 'nv', 'nv2'
 }
 
+# Variable visualization configuration
+VARIABLE_LABELS = {
+    'zb': 'Elevation (m)',
+    'zb+rhoveg': 'Vegetation-shaded Topography',
+    'ustar': 'Shear Velocity (m/s)',
+    'ustar quiver': 'Shear Velocity Vectors',
+    'ustars': 'Shear Velocity S-component (m/s)',
+    'ustarn': 'Shear Velocity N-component (m/s)',
+    'zs': 'Surface Elevation (m)',
+    'zsep': 'Separation Elevation (m)',
+    'Ct': 'Sediment Concentration (kg/m²)',
+    'Cu': 'Equilibrium Concentration (kg/m²)',
+    'q': 'Sediment Flux (kg/m/s)',
+    'qs': 'Sediment Flux S-component (kg/m/s)',
+    'qn': 'Sediment Flux N-component (kg/m/s)',
+    'pickup': 'Sediment Entrainment (kg/m²)',
+    'uth': 'Threshold Shear Velocity (m/s)',
+    'w': 'Fraction Weight (-)',
+}
+
+VARIABLE_TITLES = {
+    'zb': 'Bed Elevation',
+    'zb+rhoveg': 'Bed Elevation with Vegetation (Shaded)',
+    'ustar': 'Shear Velocity',
+    'ustar quiver': 'Shear Velocity Vector Field',
+    'ustars': 'Shear Velocity (S-component)',
+    'ustarn': 'Shear Velocity (N-component)',
+    'zs': 'Surface Elevation',
+    'zsep': 'Separation Elevation',
+    'Ct': 'Sediment Concentration',
+    'Cu': 'Equilibrium Concentration',
+    'q': 'Sediment Flux',
+    'qs': 'Sediment Flux (S-component)',
+    'qn': 'Sediment Flux (N-component)',
+    'pickup': 'Sediment Entrainment',
+    'uth': 'Threshold Shear Velocity',
+    'w': 'Fraction Weight',
+}
+
 
 # ============================================================================
 # Utility Functions
@@ -1229,19 +1268,19 @@ class AeolisGUI:
         self.time_slider_1d.set(0)
 
     def browse_nc_file_1d(self):
-        """Open file dialog to select a NetCDF file for 1D plotting"""
+        """
+        Open file dialog to select a NetCDF file for 1D plotting.
+        Automatically loads and plots the transect data after selection.
+        """
         # Get initial directory from config file location
-        initial_dir = os.path.dirname(configfile)
+        initial_dir = self.get_config_dir()
         
         # Get current value to determine initial directory
         current_value = self.nc_file_entry_1d.get()
         if current_value:
-            if os.path.isabs(current_value):
-                initial_dir = os.path.dirname(current_value)
-            else:
-                full_path = os.path.join(initial_dir, current_value)
-                if os.path.exists(full_path):
-                    initial_dir = os.path.dirname(full_path)
+            current_resolved = resolve_file_path(current_value, initial_dir)
+            if current_resolved and os.path.exists(current_resolved):
+                initial_dir = os.path.dirname(current_resolved)
         
         # Open file dialog
         file_path = filedialog.askopenfilename(
@@ -1254,16 +1293,8 @@ class AeolisGUI:
         # Update entry if a file was selected
         if file_path:
             # Try to make path relative to config file directory for portability
-            config_dir = os.path.dirname(configfile)
-            try:
-                rel_path = os.path.relpath(file_path, config_dir)
-                # Use relative path if it doesn't go up too many levels
-                parent_dir = os.pardir + os.sep + os.pardir + os.sep
-                if not rel_path.startswith(parent_dir):
-                    file_path = rel_path
-            except ValueError:
-                # Different drives on Windows, keep absolute path
-                pass
+            config_dir = self.get_config_dir()
+            file_path = make_relative_path(file_path, config_dir)
             
             self.nc_file_entry_1d.delete(0, END)
             self.nc_file_entry_1d.insert(0, file_path)
@@ -1883,26 +1914,20 @@ class AeolisGUI:
             print(error_msg)  # Also print to console for debugging
 
     def get_variable_label(self, var_name):
-        """Get axis label for variable"""
-        label_dict = {
-            'zb': 'Elevation (m)',
-            'zb+rhoveg': 'Vegetation-shaded Topography',
-            'ustar': 'Shear Velocity (m/s)',
-            'ustar quiver': 'Shear Velocity Vectors',
-            'ustars': 'Shear Velocity S-component (m/s)',
-            'ustarn': 'Shear Velocity N-component (m/s)',
-            'zs': 'Surface Elevation (m)',
-            'zsep': 'Separation Elevation (m)',
-            'Ct': 'Sediment Concentration (kg/m²)',
-            'Cu': 'Equilibrium Concentration (kg/m²)',
-            'q': 'Sediment Flux (kg/m/s)',
-            'qs': 'Sediment Flux S-component (kg/m/s)',
-            'qn': 'Sediment Flux N-component (kg/m/s)',
-            'pickup': 'Sediment Entrainment (kg/m²)',
-            'uth': 'Threshold Shear Velocity (m/s)',
-            'w': 'Fraction Weight (-)',
-        }
-        base_label = label_dict.get(var_name, var_name)
+        """
+        Get axis label for variable.
+        
+        Parameters
+        ----------
+        var_name : str
+            Variable name
+            
+        Returns
+        -------
+        str
+            Formatted label with units and fraction information if applicable
+        """
+        base_label = VARIABLE_LABELS.get(var_name, var_name)
         
         # Special cases that don't need fraction checking
         if var_name in ['zb+rhoveg', 'ustar quiver']:
@@ -1919,26 +1944,20 @@ class AeolisGUI:
         return base_label
 
     def get_variable_title(self, var_name):
-        """Get title for variable"""
-        title_dict = {
-            'zb': 'Bed Elevation',
-            'zb+rhoveg': 'Bed Elevation with Vegetation (Shaded)',
-            'ustar': 'Shear Velocity',
-            'ustar quiver': 'Shear Velocity Vector Field',
-            'ustars': 'Shear Velocity (S-component)',
-            'ustarn': 'Shear Velocity (N-component)',
-            'zs': 'Surface Elevation',
-            'zsep': 'Separation Elevation',
-            'Ct': 'Sediment Concentration',
-            'Cu': 'Equilibrium Concentration',
-            'q': 'Sediment Flux',
-            'qs': 'Sediment Flux (S-component)',
-            'qn': 'Sediment Flux (N-component)',
-            'pickup': 'Sediment Entrainment',
-            'uth': 'Threshold Shear Velocity',
-            'w': 'Fraction Weight',
-        }
-        base_title = title_dict.get(var_name, var_name)
+        """
+        Get title for variable.
+        
+        Parameters
+        ----------
+        var_name : str
+            Variable name
+            
+        Returns
+        -------
+        str
+            Formatted title with fraction information if applicable
+        """
+        base_title = VARIABLE_TITLES.get(var_name, var_name)
         
         # Special cases that don't need fraction checking
         if var_name in ['zb+rhoveg', 'ustar quiver']:
