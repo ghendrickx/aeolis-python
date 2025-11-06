@@ -507,6 +507,10 @@ class AeolisGUI:
         
         combined_button = ttk.Button(button_frame, text="Bed + Vegetation", command=self.plot_combined)
         combined_button.grid(row=0, column=3, padx=5)
+        
+        # Add export button for domain visualization
+        export_domain_button = ttk.Button(button_frame, text="Export PNG", command=self.export_domain_plot_png)
+        export_domain_button.grid(row=0, column=4, padx=5)
 
     def browse_file(self, entry_widget):
         """
@@ -961,6 +965,21 @@ class AeolisGUI:
                                    command=self.force_reload_wind)
         wind_load_btn.grid(row=0, column=3, sticky=W, pady=2, padx=5)
 
+        # Export buttons for wind plots
+        export_label_wind = ttk.Label(file_frame, text="Export:")
+        export_label_wind.grid(row=1, column=0, sticky=W, pady=5)
+        
+        export_button_frame_wind = ttk.Frame(file_frame)
+        export_button_frame_wind.grid(row=1, column=1, columnspan=3, sticky=W, pady=5)
+        
+        export_wind_ts_btn = ttk.Button(export_button_frame_wind, text="Export Time Series PNG", 
+                                        command=self.export_wind_timeseries_png)
+        export_wind_ts_btn.pack(side=LEFT, padx=5)
+        
+        export_windrose_btn = ttk.Button(export_button_frame_wind, text="Export Wind Rose PNG", 
+                                         command=self.export_windrose_png)
+        export_windrose_btn.pack(side=LEFT, padx=5)
+
         # Create frame for time series plots
         timeseries_frame = ttk.LabelFrame(tab_wind, text="Wind Time Series", padding=10)
         timeseries_frame.grid(row=0, column=1, rowspan=2, padx=10, pady=10, sticky=(N, S, E, W))
@@ -1110,6 +1129,21 @@ class AeolisGUI:
                                            variable=self.overlay_veg_var)
         overlay_veg_check.grid(row=5, column=1, sticky=W, pady=2)
 
+        # Export buttons
+        export_label = ttk.Label(file_frame, text="Export:")
+        export_label.grid(row=6, column=0, sticky=W, pady=5)
+        
+        export_button_frame = ttk.Frame(file_frame)
+        export_button_frame.grid(row=6, column=1, columnspan=2, sticky=W, pady=5)
+        
+        export_png_btn = ttk.Button(export_button_frame, text="Export PNG", 
+                                    command=self.export_2d_plot_png)
+        export_png_btn.pack(side=LEFT, padx=5)
+        
+        export_mp4_btn = ttk.Button(export_button_frame, text="Export Animation (MP4)", 
+                                    command=self.export_2d_animation_mp4)
+        export_mp4_btn.pack(side=LEFT, padx=5)
+
         # Create frame for visualization
         plot_frame = ttk.LabelFrame(tab5, text="Output Visualization", padding=10)
         plot_frame.grid(row=0, column=1, padx=10, pady=10, sticky=(N, S, E, W))
@@ -1218,6 +1252,21 @@ class AeolisGUI:
                                             variable=self.auto_ylimits_var,
                                             command=self.toggle_y_limits)
         auto_ylimits_check.grid(row=4, column=2, rowspan=2, sticky=W, pady=2)
+
+        # Export buttons for 1D plots
+        export_label_1d = ttk.Label(file_frame_1d, text="Export:")
+        export_label_1d.grid(row=6, column=0, sticky=W, pady=5)
+        
+        export_button_frame_1d = ttk.Frame(file_frame_1d)
+        export_button_frame_1d.grid(row=6, column=1, columnspan=2, sticky=W, pady=5)
+        
+        export_png_btn_1d = ttk.Button(export_button_frame_1d, text="Export PNG", 
+                                       command=self.export_1d_plot_png)
+        export_png_btn_1d.pack(side=LEFT, padx=5)
+        
+        export_mp4_btn_1d = ttk.Button(export_button_frame_1d, text="Export Animation (MP4)", 
+                                       command=self.export_1d_animation_mp4)
+        export_mp4_btn_1d.pack(side=LEFT, padx=5)
 
         # Create frame for domain overview
         overview_frame = ttk.LabelFrame(tab6, text="Domain Overview", padding=10)
@@ -2893,6 +2942,286 @@ class AeolisGUI:
         self.overlay_veg_enabled = True
         current_time = int(self.time_slider.get())
         self.update_time_step(current_time)
+
+    def export_wind_timeseries_png(self):
+        """
+        Export the wind time series plot as a PNG image.
+        Opens a file dialog to choose save location.
+        """
+        if not hasattr(self, 'wind_ts_fig') or self.wind_ts_fig is None:
+            messagebox.showwarning("Warning", "No wind plot to export. Please load wind data first.")
+            return
+        
+        # Open file dialog for saving
+        file_path = filedialog.asksaveasfilename(
+            initialdir=self.get_config_dir(),
+            title="Save wind time series as PNG",
+            defaultextension=".png",
+            filetypes=(("PNG files", "*.png"), ("All files", "*.*"))
+        )
+        
+        if file_path:
+            try:
+                self.wind_ts_fig.savefig(file_path, dpi=300, bbox_inches='tight')
+                messagebox.showinfo("Success", f"Wind time series exported to:\n{file_path}")
+            except Exception as e:
+                error_msg = f"Failed to export plot: {str(e)}\n\n{traceback.format_exc()}"
+                messagebox.showerror("Error", error_msg)
+                print(error_msg)
+
+    def export_windrose_png(self):
+        """
+        Export the wind rose plot as a PNG image.
+        Opens a file dialog to choose save location.
+        """
+        if not hasattr(self, 'windrose_fig') or self.windrose_fig is None:
+            messagebox.showwarning("Warning", "No wind rose plot to export. Please load wind data first.")
+            return
+        
+        # Open file dialog for saving
+        file_path = filedialog.asksaveasfilename(
+            initialdir=self.get_config_dir(),
+            title="Save wind rose as PNG",
+            defaultextension=".png",
+            filetypes=(("PNG files", "*.png"), ("All files", "*.*"))
+        )
+        
+        if file_path:
+            try:
+                self.windrose_fig.savefig(file_path, dpi=300, bbox_inches='tight')
+                messagebox.showinfo("Success", f"Wind rose exported to:\n{file_path}")
+            except Exception as e:
+                error_msg = f"Failed to export plot: {str(e)}\n\n{traceback.format_exc()}"
+                messagebox.showerror("Error", error_msg)
+                print(error_msg)
+
+    def export_domain_plot_png(self):
+        """
+        Export the current domain visualization plot as a PNG image.
+        Opens a file dialog to choose save location.
+        """
+        if not hasattr(self, 'fig') or self.fig is None:
+            messagebox.showwarning("Warning", "No plot to export. Please plot data first.")
+            return
+        
+        # Open file dialog for saving
+        file_path = filedialog.asksaveasfilename(
+            initialdir=self.get_config_dir(),
+            title="Save plot as PNG",
+            defaultextension=".png",
+            filetypes=(("PNG files", "*.png"), ("All files", "*.*"))
+        )
+        
+        if file_path:
+            try:
+                self.fig.savefig(file_path, dpi=300, bbox_inches='tight')
+                messagebox.showinfo("Success", f"Plot exported to:\n{file_path}")
+            except Exception as e:
+                error_msg = f"Failed to export plot: {str(e)}\n\n{traceback.format_exc()}"
+                messagebox.showerror("Error", error_msg)
+                print(error_msg)
+
+    def export_2d_plot_png(self):
+        """
+        Export the current 2D plot as a PNG image.
+        Opens a file dialog to choose save location.
+        """
+        if not hasattr(self, 'output_fig') or self.output_fig is None:
+            messagebox.showwarning("Warning", "No plot to export. Please load data first.")
+            return
+        
+        # Open file dialog for saving
+        file_path = filedialog.asksaveasfilename(
+            initialdir=self.get_config_dir(),
+            title="Save plot as PNG",
+            defaultextension=".png",
+            filetypes=(("PNG files", "*.png"), ("All files", "*.*"))
+        )
+        
+        if file_path:
+            try:
+                self.output_fig.savefig(file_path, dpi=300, bbox_inches='tight')
+                messagebox.showinfo("Success", f"Plot exported to:\n{file_path}")
+            except Exception as e:
+                error_msg = f"Failed to export plot: {str(e)}\n\n{traceback.format_exc()}"
+                messagebox.showerror("Error", error_msg)
+                print(error_msg)
+
+    def export_2d_animation_mp4(self):
+        """
+        Export the 2D plot as an MP4 animation over all time steps.
+        Requires matplotlib animation support and ffmpeg.
+        """
+        if not hasattr(self, 'nc_data_cache') or self.nc_data_cache is None:
+            messagebox.showwarning("Warning", "No data loaded. Please load NetCDF data first.")
+            return
+        
+        n_times = self.nc_data_cache.get('n_times', 1)
+        if n_times <= 1:
+            messagebox.showwarning("Warning", "Only one time step available. Animation requires multiple time steps.")
+            return
+        
+        # Open file dialog for saving
+        file_path = filedialog.asksaveasfilename(
+            initialdir=self.get_config_dir(),
+            title="Save animation as MP4",
+            defaultextension=".mp4",
+            filetypes=(("MP4 files", "*.mp4"), ("All files", "*.*"))
+        )
+        
+        if file_path:
+            try:
+                from matplotlib.animation import FuncAnimation, FFMpegWriter
+                
+                # Create progress dialog
+                progress_window = Toplevel(self.root)
+                progress_window.title("Exporting Animation")
+                progress_window.geometry("300x100")
+                progress_label = ttk.Label(progress_window, text="Creating animation...\nThis may take a few minutes.")
+                progress_label.pack(pady=20)
+                progress_bar = ttk.Progressbar(progress_window, mode='determinate', maximum=n_times)
+                progress_bar.pack(pady=10, padx=20, fill=X)
+                progress_window.update()
+                
+                # Get current slider position to restore later
+                original_time = int(self.time_slider.get())
+                
+                # Animation update function
+                def update_frame(frame_num):
+                    self.time_slider.set(frame_num)
+                    self.update_2d_plot()
+                    progress_bar['value'] = frame_num + 1
+                    progress_window.update()
+                    return []
+                
+                # Create animation
+                ani = FuncAnimation(self.output_fig, update_frame, frames=n_times, 
+                                   interval=200, blit=False, repeat=False)
+                
+                # Save animation
+                writer = FFMpegWriter(fps=5, bitrate=1800)
+                ani.save(file_path, writer=writer)
+                
+                # Restore original time position
+                self.time_slider.set(original_time)
+                self.update_2d_plot()
+                
+                # Close progress window
+                progress_window.destroy()
+                
+                messagebox.showinfo("Success", f"Animation exported to:\n{file_path}")
+                
+            except ImportError:
+                messagebox.showerror("Error", 
+                    "Animation export requires ffmpeg to be installed.\n\n"
+                    "Please install ffmpeg and ensure it's in your system PATH.")
+            except Exception as e:
+                error_msg = f"Failed to export animation: {str(e)}\n\n{traceback.format_exc()}"
+                messagebox.showerror("Error", error_msg)
+                print(error_msg)
+                if 'progress_window' in locals():
+                    progress_window.destroy()
+
+    def export_1d_plot_png(self):
+        """
+        Export the current 1D transect plot as a PNG image.
+        Opens a file dialog to choose save location.
+        """
+        if not hasattr(self, 'output_1d_fig') or self.output_1d_fig is None:
+            messagebox.showwarning("Warning", "No plot to export. Please load data first.")
+            return
+        
+        # Open file dialog for saving
+        file_path = filedialog.asksaveasfilename(
+            initialdir=self.get_config_dir(),
+            title="Save plot as PNG",
+            defaultextension=".png",
+            filetypes=(("PNG files", "*.png"), ("All files", "*.*"))
+        )
+        
+        if file_path:
+            try:
+                self.output_1d_fig.savefig(file_path, dpi=300, bbox_inches='tight')
+                messagebox.showinfo("Success", f"Plot exported to:\n{file_path}")
+            except Exception as e:
+                error_msg = f"Failed to export plot: {str(e)}\n\n{traceback.format_exc()}"
+                messagebox.showerror("Error", error_msg)
+                print(error_msg)
+
+    def export_1d_animation_mp4(self):
+        """
+        Export the 1D transect plot as an MP4 animation over all time steps.
+        Requires matplotlib animation support and ffmpeg.
+        """
+        if not hasattr(self, 'nc_data_cache_1d') or self.nc_data_cache_1d is None:
+            messagebox.showwarning("Warning", "No data loaded. Please load NetCDF data first.")
+            return
+        
+        n_times = self.nc_data_cache_1d.get('n_times', 1)
+        if n_times <= 1:
+            messagebox.showwarning("Warning", "Only one time step available. Animation requires multiple time steps.")
+            return
+        
+        # Open file dialog for saving
+        file_path = filedialog.asksaveasfilename(
+            initialdir=self.get_config_dir(),
+            title="Save animation as MP4",
+            defaultextension=".mp4",
+            filetypes=(("MP4 files", "*.mp4"), ("All files", "*.*"))
+        )
+        
+        if file_path:
+            try:
+                from matplotlib.animation import FuncAnimation, FFMpegWriter
+                
+                # Create progress dialog
+                progress_window = Toplevel(self.root)
+                progress_window.title("Exporting Animation")
+                progress_window.geometry("300x100")
+                progress_label = ttk.Label(progress_window, text="Creating animation...\nThis may take a few minutes.")
+                progress_label.pack(pady=20)
+                progress_bar = ttk.Progressbar(progress_window, mode='determinate', maximum=n_times)
+                progress_bar.pack(pady=10, padx=20, fill=X)
+                progress_window.update()
+                
+                # Get current slider position to restore later
+                original_time = int(self.time_slider_1d.get())
+                
+                # Animation update function
+                def update_frame(frame_num):
+                    self.time_slider_1d.set(frame_num)
+                    self.update_1d_plot()
+                    progress_bar['value'] = frame_num + 1
+                    progress_window.update()
+                    return []
+                
+                # Create animation
+                ani = FuncAnimation(self.output_1d_fig, update_frame, frames=n_times, 
+                                   interval=200, blit=False, repeat=False)
+                
+                # Save animation
+                writer = FFMpegWriter(fps=5, bitrate=1800)
+                ani.save(file_path, writer=writer)
+                
+                # Restore original time position
+                self.time_slider_1d.set(original_time)
+                self.update_1d_plot()
+                
+                # Close progress window
+                progress_window.destroy()
+                
+                messagebox.showinfo("Success", f"Animation exported to:\n{file_path}")
+                
+            except ImportError:
+                messagebox.showerror("Error", 
+                    "Animation export requires ffmpeg to be installed.\n\n"
+                    "Please install ffmpeg and ensure it's in your system PATH.")
+            except Exception as e:
+                error_msg = f"Failed to export animation: {str(e)}\n\n{traceback.format_exc()}"
+                messagebox.showerror("Error", error_msg)
+                print(error_msg)
+                if 'progress_window' in locals():
+                    progress_window.destroy()
 
     def save(self):
         # Save the current entries to the configuration dictionary
