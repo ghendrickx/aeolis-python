@@ -2325,8 +2325,111 @@ class AeolisGUI:
             print(error_msg)
             messagebox.showerror("Error", f"Failed to render ustar quiver visualization:\n{str(e)}")
 
+    def _load_grid_data(self, xgrid_file, ygrid_file, config_dir):
+        """
+        Load x and y grid data if available.
+        
+        Parameters
+        ----------
+        xgrid_file : str
+            Path to x-grid file (may be relative or absolute)
+        ygrid_file : str
+            Path to y-grid file (may be relative or absolute)
+        config_dir : str
+            Base directory for resolving relative paths
+            
+        Returns
+        -------
+        tuple
+            (x_data, y_data) numpy arrays or (None, None) if not available
+        """
+        x_data = None
+        y_data = None
+        
+        if xgrid_file:
+            xgrid_file_path = resolve_file_path(xgrid_file, config_dir)
+            if xgrid_file_path and os.path.exists(xgrid_file_path):
+                x_data = np.loadtxt(xgrid_file_path)
+        
+        if ygrid_file:
+            ygrid_file_path = resolve_file_path(ygrid_file, config_dir)
+            if ygrid_file_path and os.path.exists(ygrid_file_path):
+                y_data = np.loadtxt(ygrid_file_path)
+        
+        return x_data, y_data
+
+    def _get_colormap_and_label(self, file_key):
+        """
+        Get appropriate colormap and label for a given file type.
+        
+        Parameters
+        ----------
+        file_key : str
+            File type key ('bed_file', 'ne_file', 'veg_file', etc.)
+            
+        Returns
+        -------
+        tuple
+            (colormap_name, label_text)
+        """
+        colormap_config = {
+            'bed_file': ('terrain', 'Elevation (m)'),
+            'ne_file': ('viridis', 'Ne'),
+            'veg_file': ('Greens', 'Vegetation'),
+        }
+        return colormap_config.get(file_key, ('viridis', 'Value'))
+
+    def _update_or_create_colorbar(self, im, label, fig, ax):
+        """
+        Update existing colorbar or create a new one.
+        
+        Parameters
+        ----------
+        im : mappable
+            The image/mesh object returned by pcolormesh or imshow
+        label : str
+            Colorbar label
+        fig : Figure
+            Matplotlib figure
+        ax : Axes
+            Matplotlib axes
+            
+        Returns
+        -------
+        Colorbar
+            The updated or newly created colorbar
+        """
+        if self.colorbar is not None:
+            try:
+                # Update existing colorbar
+                self.colorbar.update_normal(im)
+                self.colorbar.set_label(label)
+                return self.colorbar
+            except:
+                # If update fails, create new one
+                pass
+        
+        # Create new colorbar
+        return fig.colorbar(im, ax=ax, label=label)
+
     def plot_data(self, file_key, title):
-        """Plot data from specified file (bed_file, ne_file, or veg_file)"""
+        """
+        Plot data from specified file (bed_file, ne_file, or veg_file).
+        
+        Parameters
+        ----------
+        file_key : str
+            Key for the file entry in self.entries (e.g., 'bed_file', 'ne_file', 'veg_file')
+        title : str
+            Plot title
+            
+        Raises
+        ------
+        FileNotFoundError
+            If the specified file doesn't exist
+        ValueError
+            If file format is invalid
+        """
         try:
             # Clear the previous plot
             self.ax.clear()
@@ -2345,12 +2448,8 @@ class AeolisGUI:
             config_dir = self.get_config_dir()
             
             # Load the data file
-            if not os.path.isabs(data_file):
-                data_file_path = os.path.join(config_dir, data_file)
-            else:
-                data_file_path = data_file
-                
-            if not os.path.exists(data_file_path):
+            data_file_path = resolve_file_path(data_file, config_dir)
+            if not data_file_path or not os.path.exists(data_file_path):
                 messagebox.showerror("Error", f"File not found: {data_file_path}")
                 return
             
@@ -2358,32 +2457,10 @@ class AeolisGUI:
             z_data = np.loadtxt(data_file_path)
             
             # Try to load x and y grid data if available
-            x_data = None
-            y_data = None
-            
-            if xgrid_file:
-                xgrid_file_path = os.path.join(config_dir, xgrid_file) if not os.path.isabs(xgrid_file) else xgrid_file
-                if os.path.exists(xgrid_file_path):
-                    x_data = np.loadtxt(xgrid_file_path)
-            
-            if ygrid_file:
-                ygrid_file_path = os.path.join(config_dir, ygrid_file) if not os.path.isabs(ygrid_file) else ygrid_file
-                if os.path.exists(ygrid_file_path):
-                    y_data = np.loadtxt(ygrid_file_path)
+            x_data, y_data = self._load_grid_data(xgrid_file, ygrid_file, config_dir)
             
             # Choose colormap based on data type
-            if file_key == 'bed_file':
-                cmap = 'terrain'
-                label = 'Elevation (m)'
-            elif file_key == 'ne_file':
-                cmap = 'viridis'
-                label = 'Ne'
-            elif file_key == 'veg_file':
-                cmap = 'Greens'
-                label = 'Vegetation'
-            else:
-                cmap = 'viridis'
-                label = 'Value'
+            cmap, label = self._get_colormap_and_label(file_key)
             
             # Create the plot
             if x_data is not None and y_data is not None:
@@ -2400,13 +2477,7 @@ class AeolisGUI:
             self.ax.set_title(title)
             
             # Handle colorbar properly to avoid shrinking
-            if self.colorbar is not None:
-                # Update existing colorbar
-                self.colorbar.update_normal(im)
-                self.colorbar.set_label(label)
-            else:
-                # Create new colorbar only on first run
-                self.colorbar = self.fig.colorbar(im, ax=self.ax, label=label)
+            self.colorbar = self._update_or_create_colorbar(im, label, self.fig, self.ax)
 
             # Enforce equal aspect ratio in domain visualization
             self.ax.set_aspect('equal', adjustable='box')
@@ -2415,7 +2486,6 @@ class AeolisGUI:
             self.canvas.draw()
             
         except Exception as e:
-            import traceback
             error_msg = f"Failed to plot {file_key}: {str(e)}\n\n{traceback.format_exc()}"
             messagebox.showerror("Error", error_msg)
             print(error_msg)  # Also print to console for debugging
@@ -2444,22 +2514,14 @@ class AeolisGUI:
             config_dir = self.get_config_dir()
             
             # Load the bed file
-            if not os.path.isabs(bed_file):
-                bed_file_path = os.path.join(config_dir, bed_file)
-            else:
-                bed_file_path = bed_file
-                
-            if not os.path.exists(bed_file_path):
+            bed_file_path = resolve_file_path(bed_file, config_dir)
+            if not bed_file_path or not os.path.exists(bed_file_path):
                 messagebox.showerror("Error", f"Bed file not found: {bed_file_path}")
                 return
             
             # Load the vegetation file
-            if not os.path.isabs(veg_file):
-                veg_file_path = os.path.join(config_dir, veg_file)
-            else:
-                veg_file_path = veg_file
-                
-            if not os.path.exists(veg_file_path):
+            veg_file_path = resolve_file_path(veg_file, config_dir)
+            if not veg_file_path or not os.path.exists(veg_file_path):
                 messagebox.showerror("Error", f"Vegetation file not found: {veg_file_path}")
                 return
             
@@ -2468,18 +2530,7 @@ class AeolisGUI:
             veg_data = np.loadtxt(veg_file_path)
             
             # Try to load x and y grid data if available
-            x_data = None
-            y_data = None
-            
-            if xgrid_file:
-                xgrid_file_path = os.path.join(config_dir, xgrid_file) if not os.path.isabs(xgrid_file) else xgrid_file
-                if os.path.exists(xgrid_file_path):
-                    x_data = np.loadtxt(xgrid_file_path)
-            
-            if ygrid_file:
-                ygrid_file_path = os.path.join(config_dir, ygrid_file) if not os.path.isabs(ygrid_file) else ygrid_file
-                if os.path.exists(ygrid_file_path):
-                    y_data = np.loadtxt(ygrid_file_path)
+            x_data, y_data = self._load_grid_data(xgrid_file, ygrid_file, config_dir)
             
             # Create the bed elevation plot
             if x_data is not None and y_data is not None:
@@ -2513,13 +2564,7 @@ class AeolisGUI:
             self.ax.set_title('Bed Elevation with Vegetation')
             
             # Handle colorbar properly to avoid shrinking
-            if self.colorbar is not None:
-                # Update existing colorbar
-                self.colorbar.update_normal(im)
-                self.colorbar.set_label('Elevation (m)')
-            else:
-                # Create new colorbar only on first run
-                self.colorbar = self.fig.colorbar(im, ax=self.ax, label='Elevation (m)')
+            self.colorbar = self._update_or_create_colorbar(im, 'Elevation (m)', self.fig, self.ax)
 
             # Enforce equal aspect ratio in domain visualization
             self.ax.set_aspect('equal', adjustable='box')
