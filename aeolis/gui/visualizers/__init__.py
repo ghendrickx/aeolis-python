@@ -11,5 +11,6 @@ This package contains specialized visualizer modules for different types of data
 from aeolis.gui.visualizers.domain import DomainVisualizer
 from aeolis.gui.visualizers.wind import WindVisualizer
 from aeolis.gui.visualizers.output_2d import Output2DVisualizer
+from aeolis.gui.visualizers.output_1d import Output1DVisualizer
 
-__all__ = ['DomainVisualizer', 'WindVisualizer', 'Output2DVisualizer']
+__all__ = ['DomainVisualizer', 'WindVisualizer', 'Output2DVisualizer', 'Output1DVisualizer']

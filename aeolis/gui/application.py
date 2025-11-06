@@ -37,6 +37,7 @@ from aeolis.gui.utils import (
 from aeolis.gui.visualizers.domain import DomainVisualizer
 from aeolis.gui.visualizers.wind import WindVisualizer
 from aeolis.gui.visualizers.output_2d import Output2DVisualizer
+from aeolis.gui.visualizers.output_1d import Output1DVisualizer
 
 try:
     import netCDF4
@@ -879,11 +880,11 @@ class AeolisGUI:
         export_button_frame_1d.grid(row=6, column=1, columnspan=2, sticky=W, pady=5)
         
         export_png_btn_1d = ttk.Button(export_button_frame_1d, text="Export PNG", 
-                                       command=self.export_1d_plot_png)
+                                       command=lambda: self.output_1d_visualizer.export_png() if hasattr(self, 'output_1d_visualizer') else None)
         export_png_btn_1d.pack(side=LEFT, padx=5)
         
         export_mp4_btn_1d = ttk.Button(export_button_frame_1d, text="Export Animation (MP4)", 
-                                       command=self.export_1d_animation_mp4)
+                                       command=lambda: self.output_1d_visualizer.export_animation_mp4() if hasattr(self, 'output_1d_visualizer') else None)
         export_mp4_btn_1d.pack(side=LEFT, padx=5)
 
         # Create frame for domain overview
@@ -933,6 +934,26 @@ class AeolisGUI:
                                         command=self.update_1d_time_step)
         self.time_slider_1d.pack(side=LEFT, fill=X, expand=1, padx=5)
         self.time_slider_1d.set(0)
+        
+        # Initialize 1D output visualizer (after all UI components are created)
+        self.output_1d_visualizer = Output1DVisualizer(
+            self.output_1d_ax, self.output_1d_overview_ax,
+            self.output_1d_canvas, self.output_1d_fig,
+            self.time_slider_1d, self.time_label_1d,
+            self.transect_slider, self.transect_label,
+            self.variable_var_1d, self.transect_direction_var,
+            self.nc_file_entry_1d, self.variable_dropdown_1d,
+            self.get_config_dir, self.get_variable_label, self.get_variable_title
+        )
+        
+        # Update slider commands to use visualizer
+        self.transect_slider.config(command=self.output_1d_visualizer.update_transect_position)
+        self.time_slider_1d.config(command=self.output_1d_visualizer.update_time_step)
+        
+        # Update dropdown binding to use visualizer
+        self.variable_dropdown_1d.unbind('<<ComboboxSelected>>')
+        self.variable_dropdown_1d.bind('<<ComboboxSelected>>', 
+                                      lambda e: self.output_1d_visualizer.update_plot())
 
     def browse_nc_file_1d(self):
         """
@@ -966,469 +987,30 @@ class AeolisGUI:
             self.nc_file_entry_1d.delete(0, END)
             self.nc_file_entry_1d.insert(0, file_path)
             
-            # Auto-load and plot the data
-            self.plot_1d_transect()
+            # Auto-load and plot the data using visualizer
+            if hasattr(self, 'output_1d_visualizer'):
+                self.output_1d_visualizer.load_and_plot()
 
     def on_variable_changed(self, event):
         """Update plot when variable selection changes"""
-        if hasattr(self, 'nc_data_cache_1d') and self.nc_data_cache_1d is not None:
-            self.update_1d_plot()
+        if hasattr(self, 'output_1d_visualizer'):
+            self.output_1d_visualizer.update_plot()
 
     def update_transect_direction(self):
         """Update transect label and slider range when direction changes"""
         # Update plot if data is loaded
-        if hasattr(self, 'nc_data_cache_1d') and self.nc_data_cache_1d is not None:
-            # Reconfigure slider range based on new direction
-            first_var = list(self.nc_data_cache_1d['vars'].values())[0]
-            
-            if self.transect_direction_var.get() == 'cross-shore':
-                # Fix y-index, vary along x (s dimension)
-                max_idx = first_var.shape[1] - 1  # n dimension
-                self.transect_slider.configure(from_=0, to=max_idx)
-                # Set to middle or constrain current value
-                current_val = int(self.transect_slider.get())
-                if current_val > max_idx:
-                    self.transect_slider.set(max_idx // 2)
-                self.transect_label.config(text=f"Y-index: {int(self.transect_slider.get())}")
-            else:
-                # Fix x-index, vary along y (n dimension)
-                max_idx = first_var.shape[2] - 1  # s dimension
-                self.transect_slider.configure(from_=0, to=max_idx)
-                # Set to middle or constrain current value
-                current_val = int(self.transect_slider.get())
-                if current_val > max_idx:
-                    self.transect_slider.set(max_idx // 2)
-                self.transect_label.config(text=f"X-index: {int(self.transect_slider.get())}")
-            
-            self.update_1d_plot()
-        else:
-            # Just update the label if no data loaded yet
-            idx = int(self.transect_slider.get())
-            if self.transect_direction_var.get() == 'cross-shore':
-                self.transect_label.config(text=f"Y-index: {idx}")
-            else:
-                self.transect_label.config(text=f"X-index: {idx}")
+        if hasattr(self, 'output_1d_visualizer') and self.output_1d_visualizer.nc_data_cache_1d is not None:
+            # Reload to reconfigure slider properly
+            self.output_1d_visualizer.load_and_plot()
 
     def update_1d_transect_position(self, value):
-        """Update the transect position label"""
-        idx = int(float(value))
-        if self.transect_direction_var.get() == 'cross-shore':
-            self.transect_label.config(text=f"Y-index: {idx}")
-        else:
-            self.transect_label.config(text=f"X-index: {idx}")
-        
-        # Update plot if data is loaded
-        if hasattr(self, 'nc_data_cache_1d') and self.nc_data_cache_1d is not None:
-            self.update_1d_plot()
+        """Deprecated - now handled by visualizer"""
+        pass
 
     def update_1d_time_step(self, value):
-        """Update the 1D plot based on the time slider value"""
-        if not hasattr(self, 'nc_data_cache_1d') or self.nc_data_cache_1d is None:
-            return
-        
-        # Get time index from slider
-        time_idx = int(float(value))
-        
-        # Update label
-        self.time_label_1d.config(text=f"Time step: {time_idx}")
-        
-        # Update plot
+        """Deprecated - now handled by visualizer"""
+        pass
         self.update_1d_plot()
-
-    def plot_1d_transect(self):
-        """Load NetCDF file and plot 1D transect"""
-        if not HAVE_NETCDF:
-            messagebox.showerror("Error", "netCDF4 library is not available!")
-            return
-            
-        try:
-            # Get the NC file path
-            nc_file = self.nc_file_entry_1d.get()
-            
-            if not nc_file:
-                messagebox.showwarning("Warning", "No NetCDF file specified!")
-                return
-            
-            # Get the directory of the config file to resolve relative paths
-            config_dir = os.path.dirname(configfile)
-            
-            # Load the NC file
-            if not os.path.isabs(nc_file):
-                nc_file_path = os.path.join(config_dir, nc_file)
-            else:
-                nc_file_path = nc_file
-                
-            if not os.path.exists(nc_file_path):
-                messagebox.showerror("Error", f"NetCDF file not found: {nc_file_path}")
-                return
-            
-            # Open NetCDF file and cache data
-            with netCDF4.Dataset(nc_file_path, 'r') as nc:
-                # Get available variables
-                available_vars = list(nc.variables.keys())
-                
-                # Try to get x and y coordinates
-                x_data = None
-                y_data = None
-                
-                if 'x' in nc.variables:
-                    x_data = nc.variables['x'][:]
-                if 'y' in nc.variables:
-                    y_data = nc.variables['y'][:]
-                
-                # Get s and n coordinates (grid indices)
-                s_data = None
-                n_data = None
-                if 's' in nc.variables:
-                    s_data = nc.variables['s'][:]
-                if 'n' in nc.variables:
-                    n_data = nc.variables['n'][:]
-                
-                # Find all available 2D/3D variables (potential plot candidates)
-                # Exclude coordinate and metadata variables
-                coord_vars = {'x', 'y', 's', 'n', 'lat', 'lon', 'time', 'layers', 'fractions', 
-                             'x_bounds', 'y_bounds', 'lat_bounds', 'lon_bounds', 'time_bounds', 'crs', 'nv', 'nv2'}
-                candidate_vars = []
-                var_data_dict = {}
-                n_times = 1
-                
-                for var_name in available_vars:
-                    if var_name in coord_vars:
-                        continue
-                    
-                    var = nc.variables[var_name]
-                    
-                    # Check if time dimension exists
-                    if 'time' in var.dimensions:
-                        # Load all time steps
-                        var_data = var[:]
-                        # Need at least 3 dimensions: (time, n, s) or (time, n, s, fractions)
-                        if var_data.ndim < 3:
-                            continue  # Skip variables without spatial dimensions
-                        n_times = max(n_times, var_data.shape[0])
-                    else:
-                        # Single time step - validate shape
-                        # Need at least 2 spatial dimensions: (n, s) or (n, s, fractions)
-                        if var.ndim < 2:
-                            continue  # Skip variables without spatial dimensions
-                        if var.ndim == 2:
-                            var_data = var[:, :]
-                            var_data = np.expand_dims(var_data, axis=0)  # Add time dimension
-                        elif var.ndim == 3:  # (n, s, fractions)
-                            var_data = var[:, :, :]
-                            var_data = np.expand_dims(var_data, axis=0)  # Add time dimension
-                    
-                    var_data_dict[var_name] = var_data
-                    candidate_vars.append(var_name)
-                
-                # Check if any variables were loaded
-                if not var_data_dict:
-                    messagebox.showerror("Error", "No valid variables found in NetCDF file!")
-                    return
-                
-                # Update variable dropdown with available variables
-                self.variable_dropdown_1d['values'] = sorted(candidate_vars)
-                # Set default to first variable (prefer 'zb' if available)
-                if 'zb' in candidate_vars:
-                    self.variable_var_1d.set('zb')
-                else:
-                    self.variable_var_1d.set(sorted(candidate_vars)[0])
-                
-                # Cache data for slider updates
-                self.nc_data_cache_1d = {
-                    'vars': var_data_dict,
-                    'x': x_data,
-                    'y': y_data,
-                    's': s_data,
-                    'n': n_data,
-                    'n_times': n_times,
-                    'available_vars': candidate_vars
-                }
-            
-            # Configure the time slider
-            if n_times > 1:
-                self.time_slider_1d.configure(from_=0, to=n_times-1)
-                self.time_slider_1d.set(n_times - 1)  # Start with last time step
-            else:
-                self.time_slider_1d.configure(from_=0, to=0)
-                self.time_slider_1d.set(0)
-            
-            # Configure transect slider based on data shape
-            # Get shape from first available variable (already validated to be non-empty above)
-            # Use dict.values() directly instead of next(iter()) for clarity
-            first_var = list(var_data_dict.values())[0]
-            if self.transect_direction_var.get() == 'cross-shore':
-                # Fix y-index, vary along x (s dimension)
-                max_idx = first_var.shape[1] - 1  # n dimension
-                self.transect_slider.configure(from_=0, to=max_idx)
-                self.transect_slider.set(max_idx // 2)  # Middle
-            else:
-                # Fix x-index, vary along y (n dimension)
-                max_idx = first_var.shape[2] - 1  # s dimension
-                self.transect_slider.configure(from_=0, to=max_idx)
-                self.transect_slider.set(max_idx // 2)  # Middle
-            
-            # Plot the initial (last) time step
-            self.update_1d_plot()
-            
-        except Exception as e:
-            import traceback
-            error_msg = f"Failed to plot 1D transect: {str(e)}\n\n{traceback.format_exc()}"
-            messagebox.showerror("Error", error_msg)
-            print(error_msg)  # Also print to console for debugging
-
-    def update_1d_plot(self):
-        """Update the 1D plot with current settings"""
-        if not hasattr(self, 'nc_data_cache_1d') or self.nc_data_cache_1d is None:
-            return
-        
-        try:
-            # Clear the previous plot
-            self.output_1d_ax.clear()
-            
-            # Get time index from slider
-            time_idx = int(self.time_slider_1d.get())
-            
-            # Get transect index from slider
-            transect_idx = int(self.transect_slider.get())
-            
-            # Get selected variable
-            var_name = self.variable_var_1d.get()
-            
-            # Check if variable exists in cache
-            if var_name not in self.nc_data_cache_1d['vars']:
-                messagebox.showwarning("Warning", f"Variable '{var_name}' not found in NetCDF file!")
-                return
-            
-            # Get the data
-            var_data = self.nc_data_cache_1d['vars'][var_name]
-            
-            # Check if variable has fractions dimension (4D: time, n, s, fractions)
-            has_fractions = var_data.ndim == 4
-            
-            # Extract transect based on direction
-            if self.transect_direction_var.get() == 'cross-shore':
-                # Fix y-index (n), vary along x (s)
-                if has_fractions:
-                    # Extract all fractions for this transect: (fractions,)
-                    transect_data = var_data[time_idx, transect_idx, :, :]  # (s, fractions)
-                    # Average or select first fraction
-                    transect_data = transect_data.mean(axis=1)  # Average across fractions
-                else:
-                    transect_data = var_data[time_idx, transect_idx, :]
-                
-                # Get x-coordinates
-                if self.nc_data_cache_1d['x'] is not None:
-                    x_data = self.nc_data_cache_1d['x']
-                    if x_data.ndim == 2:
-                        x_coords = x_data[transect_idx, :]
-                    else:
-                        x_coords = x_data
-                    xlabel = 'X (m)'
-                elif self.nc_data_cache_1d['s'] is not None:
-                    x_coords = self.nc_data_cache_1d['s']
-                    xlabel = 'S-index'
-                else:
-                    x_coords = np.arange(len(transect_data))
-                    xlabel = 'Grid Index'
-            else:
-                # Fix x-index (s), vary along y (n)
-                if has_fractions:
-                    # Extract all fractions for this transect: (fractions,)
-                    transect_data = var_data[time_idx, :, transect_idx, :]  # (n, fractions)
-                    # Average or select first fraction
-                    transect_data = transect_data.mean(axis=1)  # Average across fractions
-                else:
-                    transect_data = var_data[time_idx, :, transect_idx]
-                
-                # Get y-coordinates
-                if self.nc_data_cache_1d['y'] is not None:
-                    y_data = self.nc_data_cache_1d['y']
-                    if y_data.ndim == 2:
-                        x_coords = y_data[:, transect_idx]
-                    else:
-                        x_coords = y_data
-                    xlabel = 'Y (m)'
-                elif self.nc_data_cache_1d['n'] is not None:
-                    x_coords = self.nc_data_cache_1d['n']
-                    xlabel = 'N-index'
-                else:
-                    x_coords = np.arange(len(transect_data))
-                    xlabel = 'Grid Index'
-            
-            # Plot the transect
-            self.output_1d_ax.plot(x_coords, transect_data, 'b-', linewidth=2)
-            self.output_1d_ax.set_xlabel(xlabel)
-            
-            # Set ylabel based on variable
-            ylabel_dict = {
-                'zb': 'Bed Elevation (m)',
-                'ustar': 'Shear Velocity (m/s)',
-                'ustars': 'Shear Velocity S-component (m/s)',
-                'ustarn': 'Shear Velocity N-component (m/s)',
-                'zs': 'Surface Elevation (m)',
-                'zsep': 'Separation Elevation (m)',
-                'Ct': 'Sediment Concentration (kg/m²)',
-                'Cu': 'Equilibrium Concentration (kg/m²)',
-                'q': 'Sediment Flux (kg/m/s)',
-                'qs': 'Sediment Flux S-component (kg/m/s)',
-                'qn': 'Sediment Flux N-component (kg/m/s)',
-                'pickup': 'Sediment Entrainment (kg/m²)',
-                'uth': 'Threshold Shear Velocity (m/s)',
-                'w': 'Fraction Weight (-)',
-            }
-            ylabel = ylabel_dict.get(var_name, var_name)
-            
-            # Add indication if variable has fractions dimension
-            if has_fractions:
-                n_fractions = var_data.shape[3]
-                ylabel += f' (averaged over {n_fractions} fractions)'
-            
-            self.output_1d_ax.set_ylabel(ylabel)
-            
-            # Set title
-            direction = 'Cross-shore' if self.transect_direction_var.get() == 'cross-shore' else 'Along-shore'
-            idx_label = 'Y' if self.transect_direction_var.get() == 'cross-shore' else 'X'
-            
-            # Get variable title
-            title_dict = {
-                'zb': 'Bed Elevation',
-                'ustar': 'Shear Velocity',
-                'ustars': 'Shear Velocity (S-component)',
-                'ustarn': 'Shear Velocity (N-component)',
-                'zs': 'Surface Elevation',
-                'zsep': 'Separation Elevation',
-                'Ct': 'Sediment Concentration',
-                'Cu': 'Equilibrium Concentration',
-                'q': 'Sediment Flux',
-                'qs': 'Sediment Flux (S-component)',
-                'qn': 'Sediment Flux (N-component)',
-                'pickup': 'Sediment Entrainment',
-                'uth': 'Threshold Shear Velocity',
-                'w': 'Fraction Weight',
-            }
-            var_title = title_dict.get(var_name, var_name)
-            if has_fractions:
-                n_fractions = var_data.shape[3]
-                var_title += f' (averaged over {n_fractions} fractions)'
-            
-            self.output_1d_ax.set_title(f'{direction} Transect: {var_title} ({idx_label}-index={transect_idx}, Time={time_idx})')
-            
-            # Apply Y-axis limits if specified
-            if not self.auto_ylimits_var.get():
-                try:
-                    ymin_str = self.ymin_entry_1d.get().strip()
-                    ymax_str = self.ymax_entry_1d.get().strip()
-                    if ymin_str and ymax_str:
-                        ymin = float(ymin_str)
-                        ymax = float(ymax_str)
-                        self.output_1d_ax.set_ylim(ymin, ymax)
-                    elif ymin_str:
-                        ymin = float(ymin_str)
-                        self.output_1d_ax.set_ylim(bottom=ymin)
-                    elif ymax_str:
-                        ymax = float(ymax_str)
-                        self.output_1d_ax.set_ylim(top=ymax)
-                except ValueError:
-                    pass  # Use auto limits if conversion fails
-            
-            # Add grid
-            self.output_1d_ax.grid(True, alpha=0.3)
-            
-            # Update the overview map showing the transect location
-            self.update_1d_overview(transect_idx)
-            
-            # Redraw the canvas
-            self.output_1d_canvas.draw()
-            
-        except Exception as e:
-            import traceback
-            error_msg = f"Failed to update 1D plot: {str(e)}\n\n{traceback.format_exc()}"
-            print(error_msg)  # Print to console for debugging
-
-    def update_1d_overview(self, transect_idx):
-        """Update the overview map showing the domain and transect location"""
-        try:
-            # Clear the overview axes
-            self.output_1d_overview_ax.clear()
-            
-            # Get the selected variable for background
-            var_name = self.variable_var_1d.get()
-            
-            # Get time index from slider
-            time_idx = int(self.time_slider_1d.get())
-            
-            # Check if variable exists in cache
-            if var_name not in self.nc_data_cache_1d['vars']:
-                return
-            
-            # Get the data for background
-            var_data = self.nc_data_cache_1d['vars'][var_name]
-            
-            # Extract 2D slice at current time
-            if var_data.ndim == 4:
-                z_data = var_data[time_idx, :, :, :].mean(axis=2)
-            else:
-                z_data = var_data[time_idx, :, :]
-            
-            # Get coordinates
-            x_data = self.nc_data_cache_1d['x']
-            y_data = self.nc_data_cache_1d['y']
-            
-            # Plot the background
-            if x_data is not None and y_data is not None:
-                self.output_1d_overview_ax.pcolormesh(x_data, y_data, z_data, 
-                                                     shading='auto', cmap='terrain', alpha=0.7)
-                xlabel = 'X (m)'
-                ylabel = 'Y (m)'
-            else:
-                self.output_1d_overview_ax.imshow(z_data, origin='lower', 
-                                                 aspect='auto', cmap='terrain', alpha=0.7)
-                xlabel = 'S-index'
-                ylabel = 'N-index'
-            
-            # Draw the transect line
-            if self.transect_direction_var.get() == 'cross-shore':
-                # Horizontal line at fixed y-index (n)
-                if x_data is not None and y_data is not None:
-                    if x_data.ndim == 2:
-                        x_line = x_data[transect_idx, :]
-                        y_line = np.full_like(x_line, y_data[transect_idx, 0])
-                    else:
-                        x_line = x_data
-                        y_line = np.full_like(x_line, y_data[transect_idx])
-                    self.output_1d_overview_ax.plot(x_line, y_line, 'r-', linewidth=2, label='Transect')
-                else:
-                    self.output_1d_overview_ax.axhline(y=transect_idx, color='r', linewidth=2, label='Transect')
-            else:
-                # Vertical line at fixed x-index (s)
-                if x_data is not None and y_data is not None:
-                    if x_data.ndim == 2:
-                        x_line = np.full_like(y_data[:, transect_idx], x_data[0, transect_idx])
-                        y_line = y_data[:, transect_idx]
-                    else:
-                        x_line = np.full_like(y_data, x_data[transect_idx])
-                        y_line = y_data
-                    self.output_1d_overview_ax.plot(x_line, y_line, 'r-', linewidth=2, label='Transect')
-                else:
-                    self.output_1d_overview_ax.axvline(x=transect_idx, color='r', linewidth=2, label='Transect')
-            
-            # Set labels and title
-            self.output_1d_overview_ax.set_xlabel(xlabel, fontsize=8)
-            self.output_1d_overview_ax.set_ylabel(ylabel, fontsize=8)
-            self.output_1d_overview_ax.set_title('Transect Location', fontsize=9)
-            self.output_1d_overview_ax.tick_params(labelsize=7)
-            
-            # Add equal aspect ratio
-            self.output_1d_overview_ax.set_aspect('equal', adjustable='box')
-            
-            # Redraw the overview canvas
-            self.output_1d_overview_canvas.draw()
-            
-        except Exception as e:
-            # Silently fail if overview can't be drawn
-            import traceback
-            print(f"Failed to update overview: {str(e)}\n{traceback.format_exc()}")
 
     def get_variable_label(self, var_name):
         """
@@ -1773,114 +1355,6 @@ class AeolisGUI:
         self.overlay_veg_enabled = True
         current_time = int(self.time_slider.get())
         self.update_time_step(current_time)
-
-    def export_1d_plot_png(self):
-        """
-        Export the current 1D transect plot as a PNG image.
-        Opens a file dialog to choose save location.
-        """
-        if not hasattr(self, 'output_1d_fig') or self.output_1d_fig is None:
-            messagebox.showwarning("Warning", "No plot to export. Please load data first.")
-            return
-        
-        # Open file dialog for saving
-        file_path = filedialog.asksaveasfilename(
-            initialdir=self.get_config_dir(),
-            title="Save plot as PNG",
-            defaultextension=".png",
-            filetypes=(("PNG files", "*.png"), ("All files", "*.*"))
-        )
-        
-        if file_path:
-            try:
-                self.output_1d_fig.savefig(file_path, dpi=300, bbox_inches='tight')
-                messagebox.showinfo("Success", f"Plot exported to:\n{file_path}")
-            except Exception as e:
-                error_msg = f"Failed to export plot: {str(e)}\n\n{traceback.format_exc()}"
-                messagebox.showerror("Error", error_msg)
-                print(error_msg)
-
-    def export_1d_animation_mp4(self):
-        """
-        Export the 1D transect plot as an MP4 animation over all time steps.
-        Requires matplotlib animation support and ffmpeg.
-        """
-        if not hasattr(self, 'nc_data_cache_1d') or self.nc_data_cache_1d is None:
-            messagebox.showwarning("Warning", "No data loaded. Please load NetCDF data first.")
-            return
-        
-        n_times = self.nc_data_cache_1d.get('n_times', 1)
-        if n_times <= 1:
-            messagebox.showwarning("Warning", "Only one time step available. Animation requires multiple time steps.")
-            return
-        
-        # Open file dialog for saving
-        file_path = filedialog.asksaveasfilename(
-            initialdir=self.get_config_dir(),
-            title="Save animation as MP4",
-            defaultextension=".mp4",
-            filetypes=(("MP4 files", "*.mp4"), ("All files", "*.*"))
-        )
-        
-        if file_path:
-            try:
-                from matplotlib.animation import FuncAnimation, FFMpegWriter
-                
-                # Create progress dialog
-                progress_window = Toplevel(self.root)
-                progress_window.title("Exporting Animation")
-                progress_window.geometry("300x100")
-                progress_label = ttk.Label(progress_window, text="Creating animation...\nThis may take a few minutes.")
-                progress_label.pack(pady=20)
-                progress_bar = ttk.Progressbar(progress_window, mode='determinate', maximum=n_times)
-                progress_bar.pack(pady=10, padx=20, fill=X)
-                progress_window.update()
-                
-                # Get current slider position to restore later
-                original_time = int(self.time_slider_1d.get())
-                
-                # Animation update function
-                def update_frame(frame_num):
-                    self.time_slider_1d.set(frame_num)
-                    self.update_1d_plot()
-                    # Only update progress bar if window still exists
-                    if progress_window.winfo_exists():
-                        progress_bar['value'] = frame_num + 1
-                        progress_window.update()
-                    return []
-                
-                # Create animation
-                ani = FuncAnimation(self.output_1d_fig, update_frame, frames=n_times, 
-                                   interval=200, blit=False, repeat=False)
-                
-                # Save animation
-                writer = FFMpegWriter(fps=5, bitrate=1800)
-                ani.save(file_path, writer=writer)
-                
-                # Stop and cleanup animation to prevent it from continuing
-                ani.event_source.stop()
-                del ani
-                
-                # Restore original time position
-                self.time_slider_1d.set(original_time)
-                self.update_1d_plot()
-                
-                # Close progress window
-                if progress_window.winfo_exists():
-                    progress_window.destroy()
-                
-                messagebox.showinfo("Success", f"Animation exported to:\n{file_path}")
-                
-            except ImportError:
-                messagebox.showerror("Error", 
-                    "Animation export requires ffmpeg to be installed.\n\n"
-                    "Please install ffmpeg and ensure it's in your system PATH.")
-            except Exception as e:
-                error_msg = f"Failed to export animation: {str(e)}\n\n{traceback.format_exc()}"
-                messagebox.showerror("Error", error_msg)
-                print(error_msg)
-                if 'progress_window' in locals():
-                    progress_window.destroy()
 
     def save(self):
         # Save the current entries to the configuration dictionary
