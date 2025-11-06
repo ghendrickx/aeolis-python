@@ -1,3 +1,13 @@
+"""
+AeoLiS GUI - Graphical User Interface for AeoLiS Model Configuration and Visualization
+
+This module provides a comprehensive GUI for:
+- Reading and writing configuration files
+- Visualizing domain setup (topography, vegetation, etc.)
+- Plotting wind input data and wind roses
+- Visualizing model output (2D and 1D transects)
+"""
+
 import aeolis
 from tkinter import *
 from tkinter import ttk, filedialog, messagebox
@@ -18,11 +28,180 @@ except ImportError:
 
 from windrose import WindroseAxes
 
-def apply_hillshade(z2d, x1d, y1d, az_deg=155.0, alt_deg=5.0):
+
+# ============================================================================
+# Constants
+# ============================================================================
+
+# Hillshade parameters
+HILLSHADE_AZIMUTH = 155.0
+HILLSHADE_ALTITUDE = 5.0
+HILLSHADE_AMBIENT = 0.35
+
+# Time unit conversion thresholds (in seconds)
+TIME_UNIT_THRESHOLDS = {
+    'seconds': (0, 300),        # < 5 minutes
+    'minutes': (300, 7200),     # 5 min to 2 hours
+    'hours': (7200, 172800),    # 2 hours to 2 days
+    'days': (172800, 7776000),  # 2 days to ~90 days
+    'years': (7776000, float('inf'))  # >= 90 days
+}
+
+TIME_UNIT_DIVISORS = {
+    'seconds': 1.0,
+    'minutes': 60.0,
+    'hours': 3600.0,
+    'days': 86400.0,
+    'years': 365.25 * 86400.0
+}
+
+# Visualization parameters
+OCEAN_DEPTH_THRESHOLD = -0.5
+OCEAN_DISTANCE_THRESHOLD = 200
+SUBSAMPLE_RATE_DIVISOR = 25  # For quiver plot subsampling
+
+# NetCDF coordinate and metadata variables to exclude from plotting
+NC_COORD_VARS = {
+    'x', 'y', 's', 'n', 'lat', 'lon', 'time', 'layers', 'fractions',
+    'x_bounds', 'y_bounds', 'lat_bounds', 'lon_bounds', 'time_bounds',
+    'crs', 'nv', 'nv2'
+}
+
+
+# ============================================================================
+# Utility Functions
+# ============================================================================
+
+def resolve_file_path(file_path, base_dir):
+    """
+    Resolve a file path relative to a base directory.
+    
+    Parameters
+    ----------
+    file_path : str
+        The file path to resolve (can be relative or absolute)
+    base_dir : str
+        The base directory for relative paths
+        
+    Returns
+    -------
+    str
+        Absolute path to the file, or None if file_path is empty
+    """
+    if not file_path:
+        return None
+    if os.path.isabs(file_path):
+        return file_path
+    return os.path.join(base_dir, file_path)
+
+
+def make_relative_path(file_path, base_dir):
+    """
+    Make a file path relative to a base directory if possible.
+    
+    Parameters
+    ----------
+    file_path : str
+        The absolute file path
+    base_dir : str
+        The base directory
+        
+    Returns
+    -------
+    str
+        Relative path if possible and not too many levels up, otherwise absolute path
+    """
+    try:
+        rel_path = os.path.relpath(file_path, base_dir)
+        # Only use relative path if it doesn't go up too many levels
+        parent_dir = os.pardir + os.sep + os.pardir + os.sep
+        if not rel_path.startswith(parent_dir):
+            return rel_path
+    except (ValueError, TypeError):
+        # Different drives on Windows or invalid path
+        pass
+    return file_path
+
+
+def determine_time_unit(duration_seconds):
+    """
+    Determine appropriate time unit based on simulation duration.
+    
+    Parameters
+    ----------
+    duration_seconds : float
+        Duration in seconds
+        
+    Returns
+    -------
+    tuple
+        (time_unit_name, divisor) for converting seconds to the chosen unit
+    """
+    for unit_name, (lower, upper) in TIME_UNIT_THRESHOLDS.items():
+        if lower <= duration_seconds < upper:
+            return (unit_name, TIME_UNIT_DIVISORS[unit_name])
+    # Default to years if duration is very large
+    return ('years', TIME_UNIT_DIVISORS['years'])
+
+
+def extract_time_slice(data, time_idx):
+    """
+    Extract a time slice from variable data, handling different dimensionalities.
+    
+    Parameters
+    ----------
+    data : ndarray
+        Data array (3D or 4D with time dimension)
+    time_idx : int
+        Time index to extract
+        
+    Returns
+    -------
+    ndarray
+        2D slice at the given time index
+        
+    Raises
+    ------
+    ValueError
+        If data dimensionality is unexpected
+    """
+    if data.ndim == 4:
+        # (time, n, s, fractions) - average across fractions
+        return data[time_idx, :, :, :].mean(axis=2)
+    elif data.ndim == 3:
+        # (time, n, s)
+        return data[time_idx, :, :]
+    else:
+        raise ValueError(f"Unexpected data dimensionality: {data.ndim}. Expected 3D or 4D array.")
+
+def apply_hillshade(z2d, x1d, y1d, az_deg=HILLSHADE_AZIMUTH, alt_deg=HILLSHADE_ALTITUDE):
     """
     Compute a simple hillshade (0–1) for 2D elevation array.
     Uses safe gradient computation and normalization.
     Adapted from Anim2D_ShadeVeg.py
+    
+    Parameters
+    ----------
+    z2d : ndarray
+        2D elevation data array
+    x1d : ndarray
+        1D x-coordinate array
+    y1d : ndarray
+        1D y-coordinate array
+    az_deg : float, optional
+        Azimuth angle in degrees (default: HILLSHADE_AZIMUTH)
+    alt_deg : float, optional
+        Altitude angle in degrees (default: HILLSHADE_ALTITUDE)
+        
+    Returns
+    -------
+    ndarray
+        Hillshade values between 0 and 1
+        
+    Raises
+    ------
+    ValueError
+        If z2d is not a 2D array
     """
     z = np.asarray(z2d, dtype=float)
     if z.ndim != 2:
@@ -51,7 +230,7 @@ def apply_hillshade(z2d, x1d, y1d, az_deg=155.0, alt_deg=5.0):
     lz = math.sin(alt)
 
     illum = np.clip(nx * lx + ny * ly + nz * lz, 0.0, 1.0)
-    shaded = 0.35 + (1.0 - 0.35) * illum  # ambient term
+    shaded = HILLSHADE_AMBIENT + (1.0 - HILLSHADE_AMBIENT) * illum  # ambient term
     return np.clip(shaded, 0.0, 1.0)
 
 # Initialize with default configuration
@@ -59,6 +238,34 @@ configfile = "No file selected"
 dic = DEFAULT_CONFIG.copy()
 
 class AeolisGUI:
+    """
+    Main GUI class for AeoLiS model configuration and visualization.
+    
+    This class provides a comprehensive graphical user interface for:
+    - Reading and writing AeoLiS configuration files
+    - Visualizing domain setup (topography, vegetation, grid parameters)
+    - Displaying wind input data (time series and wind roses)
+    - Visualizing model output in 2D and 1D (transects)
+    - Interactive exploration of simulation results
+    
+    Parameters
+    ----------
+    root : Tk
+        The root Tkinter window
+    dic : dict
+        Configuration dictionary containing model parameters
+        
+    Attributes
+    ----------
+    entries : dict
+        Dictionary mapping field names to Entry widgets
+    nc_data_cache : dict or None
+        Cached NetCDF data for 2D visualization
+    nc_data_cache_1d : dict or None
+        Cached NetCDF data for 1D transect visualization
+    wind_data_cache : dict or None
+        Cached wind data for wind visualization
+    """
     def __init__(self, root, dic):
         self.root = root
         self.dic = dic
@@ -263,19 +470,23 @@ class AeolisGUI:
         combined_button.grid(row=0, column=3, padx=5)
 
     def browse_file(self, entry_widget):
-        """Open file dialog to select a file and update the entry widget"""
+        """
+        Open file dialog to select a file and update the entry widget.
+        
+        Parameters
+        ----------
+        entry_widget : Entry
+            The Entry widget to update with the selected file path
+        """
         # Get initial directory from config file location
         initial_dir = self.get_config_dir()
         
         # Get current value to determine initial directory
         current_value = entry_widget.get()
         if current_value:
-            if os.path.isabs(current_value):
-                initial_dir = os.path.dirname(current_value)
-            else:
-                full_path = os.path.join(initial_dir, current_value)
-                if os.path.exists(full_path):
-                    initial_dir = os.path.dirname(full_path)
+            current_resolved = resolve_file_path(current_value, initial_dir)
+            if current_resolved and os.path.exists(current_resolved):
+                initial_dir = os.path.dirname(current_resolved)
         
         # Open file dialog
         file_path = filedialog.askopenfilename(
@@ -289,33 +500,25 @@ class AeolisGUI:
         if file_path:
             # Try to make path relative to config file directory for portability
             config_dir = self.get_config_dir()
-            try:
-                rel_path = os.path.relpath(file_path, config_dir)
-                # Use relative path if it doesn't go up too many levels
-                parent_dir = os.pardir + os.sep + os.pardir + os.sep
-                if not rel_path.startswith(parent_dir):
-                    file_path = rel_path
-            except (ValueError, TypeError):
-                # Different drives on Windows or invalid path, keep absolute path
-                pass
+            file_path = make_relative_path(file_path, config_dir)
             
             entry_widget.delete(0, END)
             entry_widget.insert(0, file_path)
 
     def browse_nc_file(self):
-        """Open file dialog to select a NetCDF file"""
+        """
+        Open file dialog to select a NetCDF file.
+        Automatically loads and plots the data after selection.
+        """
         # Get initial directory from config file location
         initial_dir = self.get_config_dir()
         
         # Get current value to determine initial directory
         current_value = self.nc_file_entry.get()
         if current_value:
-            if os.path.isabs(current_value):
-                initial_dir = os.path.dirname(current_value)
-            else:
-                full_path = os.path.join(initial_dir, current_value)
-                if os.path.exists(full_path):
-                    initial_dir = os.path.dirname(full_path)
+            current_resolved = resolve_file_path(current_value, initial_dir)
+            if current_resolved and os.path.exists(current_resolved):
+                initial_dir = os.path.dirname(current_resolved)
         
         # Open file dialog
         file_path = filedialog.askopenfilename(
@@ -329,15 +532,7 @@ class AeolisGUI:
         if file_path:
             # Try to make path relative to config file directory for portability
             config_dir = self.get_config_dir()
-            try:
-                rel_path = os.path.relpath(file_path, config_dir)
-                # Use relative path if it doesn't go up too many levels
-                parent_dir = os.pardir + os.sep + os.pardir + os.sep
-                if not rel_path.startswith(parent_dir):
-                    file_path = rel_path
-            except (ValueError, TypeError):
-                # Different drives on Windows or invalid path, keep absolute path
-                pass
+            file_path = make_relative_path(file_path, config_dir)
             
             self.nc_file_entry.delete(0, END)
             self.nc_file_entry.insert(0, file_path)
@@ -457,22 +652,19 @@ class AeolisGUI:
             self.update_1d_plot()
 
     def browse_wind_file(self):
-        """Open file dialog to select a wind file"""
+        """
+        Open file dialog to select a wind file.
+        Automatically loads and plots the wind data after selection.
+        """
         # Get initial directory from config file location
         initial_dir = self.get_config_dir()
         
         # Get current value to determine initial directory
         current_value = self.wind_file_entry.get()
         if current_value:
-            if os.path.isabs(current_value):
-                current_dir = os.path.dirname(current_value)
-                if os.path.exists(current_dir):
-                    initial_dir = current_dir
-            else:
-                config_dir = self.get_config_dir()
-                full_path = os.path.join(config_dir, current_value)
-                if os.path.exists(os.path.dirname(full_path)):
-                    initial_dir = os.path.dirname(full_path)
+            current_resolved = resolve_file_path(current_value, initial_dir)
+            if current_resolved and os.path.exists(current_resolved):
+                initial_dir = os.path.dirname(current_resolved)
         
         # Open file dialog
         file_path = filedialog.askopenfilename(
@@ -486,14 +678,7 @@ class AeolisGUI:
         if file_path:
             # Try to make path relative to config file directory for portability
             config_dir = self.get_config_dir()
-            try:
-                rel_path = os.path.relpath(file_path, config_dir)
-                # Only use relative path if it doesn't start with '..'
-                if not rel_path.startswith('..'):
-                    file_path = rel_path
-            except (ValueError, TypeError):
-                # Can't make relative path (e.g., different drives on Windows)
-                pass
+            file_path = make_relative_path(file_path, config_dir)
             
             self.wind_file_entry.delete(0, END)
             self.wind_file_entry.insert(0, file_path)
@@ -582,27 +767,9 @@ class AeolisGUI:
                 # Fallback to wind file time range
                 sim_duration = time[-1] - time[0] if len(time) > 0 else 0
             
-            # Choose appropriate time unit and convert
-            if sim_duration < 300:  # Less than 5 minutes
-                time_converted = time
-                time_unit = 'seconds'
-                time_divisor = 1.0
-            elif sim_duration < 7200:  # Less than 2 hours
-                time_converted = time / 60.0
-                time_unit = 'minutes'
-                time_divisor = 60.0
-            elif sim_duration < 172800:  # Less than 2 days
-                time_converted = time / 3600.0
-                time_unit = 'hours'
-                time_divisor = 3600.0
-            elif sim_duration < 7776000:  # Less than ~90 days
-                time_converted = time / 86400.0
-                time_unit = 'days'
-                time_divisor = 86400.0
-            else:  # >= 90 days
-                time_converted = time / (365.25 * 86400.0)
-                time_unit = 'years'
-                time_divisor = 365.25 * 86400.0
+            # Choose appropriate time unit and convert using utility function
+            time_unit, time_divisor = determine_time_unit(sim_duration)
+            time_converted = time / time_divisor
             
             # Plot wind speed time series
             self.wind_speed_ax.clear()
@@ -1974,10 +2141,10 @@ class AeolisGUI:
             # rgb shape: (ny, nx, 3)
             rgb = sand[None, None, :] * (1.0 - veg_norm[..., None]) + darkgreen[None, None, :] * veg_norm[..., None]
             
-            # Apply ocean mask: zb < -0.5 and x < 200
+            # Apply ocean mask: zb < OCEAN_DEPTH_THRESHOLD and x < OCEAN_DISTANCE_THRESHOLD
             if x_data is not None:
                 X2d, _ = np.meshgrid(x1d, y1d)
-                ocean_mask = (zb < -0.5) & (X2d < 200)
+                ocean_mask = (zb < OCEAN_DEPTH_THRESHOLD) & (X2d < OCEAN_DISTANCE_THRESHOLD)
                 rgb[ocean_mask] = ocean
             
             # Apply hillshade to modulate colors
@@ -2116,7 +2283,7 @@ class AeolisGUI:
             valid = valid & (magnitude > 1e-10)
             
             # Subsample for better visibility (every nth point)
-            subsample = max(1, min(ustars.shape[0], ustars.shape[1]) // 25)
+            subsample = max(1, min(ustars.shape[0], ustars.shape[1]) // SUBSAMPLE_RATE_DIVISOR)
             
             X_sub = X[::subsample, ::subsample]
             Y_sub = Y[::subsample, ::subsample]
