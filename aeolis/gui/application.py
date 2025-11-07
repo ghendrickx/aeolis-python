@@ -39,12 +39,6 @@ from aeolis.gui.visualizers.wind import WindVisualizer
 from aeolis.gui.visualizers.output_2d import Output2DVisualizer
 from aeolis.gui.visualizers.output_1d import Output1DVisualizer
 
-try:
-    import netCDF4
-    HAVE_NETCDF = True
-except ImportError:
-    HAVE_NETCDF = False
-
 from windrose import WindroseAxes
 
 # Initialize with default configuration
