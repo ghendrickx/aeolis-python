@@ -33,13 +33,14 @@ class Output1DVisualizer:
     def __init__(self, transect_ax, overview_ax, transect_canvas, transect_fig,
                  time_slider_1d, time_label_1d, transect_slider, transect_label,
                  variable_var_1d, direction_var, nc_file_entry_1d,
-                 variable_dropdown_1d, get_config_dir_func, 
+                 variable_dropdown_1d, overview_canvas, get_config_dir_func, 
                  get_variable_label_func, get_variable_title_func):
         """Initialize the 1D output visualizer."""
         self.transect_ax = transect_ax
         self.overview_ax = overview_ax
         self.transect_canvas = transect_canvas
         self.transect_fig = transect_fig
+        self.overview_canvas = overview_canvas
         self.time_slider_1d = time_slider_1d
         self.time_label_1d = time_label_1d
         self.transect_slider = transect_slider
@@ -272,6 +273,9 @@ class Output1DVisualizer:
             
             self.overview_ax.set_title('Domain Overview')
             self.overview_ax.legend()
+            
+            # Redraw the overview canvas
+            self.overview_canvas.draw()
             
         except Exception as e:
             error_msg = f"Failed to update overview: {str(e)}"

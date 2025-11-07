@@ -917,6 +917,7 @@ class AeolisGUI:
             self.transect_slider, self.transect_label,
             self.variable_var_1d, self.transect_direction_var,
             self.nc_file_entry_1d, self.variable_dropdown_1d,
+            self.output_1d_overview_canvas,
             self.get_config_dir, self.get_variable_label, self.get_variable_title
         )
         
