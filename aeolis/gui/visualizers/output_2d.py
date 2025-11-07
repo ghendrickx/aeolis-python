@@ -12,13 +12,9 @@ Handles visualization of 2D NetCDF output data including:
 import os
 import numpy as np
 import traceback
+import netCDF4
 from tkinter import messagebox, filedialog, Toplevel
 from tkinter import ttk
-try:
-    import netCDF4
-    HAVE_NETCDF = True
-except ImportError:
-    HAVE_NETCDF = False
 
 from aeolis.gui.utils import (
     HILLSHADE_AZIMUTH, HILLSHADE_ALTITUDE, 
@@ -68,10 +64,6 @@ class Output2DVisualizer:
 
     def load_and_plot(self):
         """Load NetCDF file and plot 2D data."""
-        if not HAVE_NETCDF:
-            messagebox.showerror("Error", "netCDF4 library is not available!")
-            return
-            
         try:
             nc_file = self.nc_file_entry.get()
             if not nc_file:
@@ -170,6 +162,10 @@ class Output2DVisualizer:
             self.output_ax.clear()
             time_idx = int(self.time_slider.get())
             var_name = self.variable_var_2d.get()
+            
+            # Update time label
+            n_times = self.nc_data_cache.get('n_times', 1)
+            self.time_label.config(text=f"Time step: {time_idx} / {n_times-1}")
             
             # Special renderings
             if var_name == 'zb+rhoveg':
@@ -308,8 +304,12 @@ class Output2DVisualizer:
                 def update_frame(frame_num):
                     self.time_slider.set(frame_num)
                     self.update_plot()
-                    progress_bar['value'] = frame_num + 1
-                    progress_window.update()
+                    try:
+                        if progress_window.winfo_exists():
+                            progress_bar['value'] = frame_num + 1
+                            progress_window.update()
+                    except:
+                        pass  # Window may have been closed
                     return []
                 
                 ani = FuncAnimation(self.output_fig, update_frame, frames=n_times,
@@ -317,9 +317,17 @@ class Output2DVisualizer:
                 writer = FFMpegWriter(fps=5, bitrate=1800)
                 ani.save(file_path, writer=writer)
                 
+                # Stop the animation by deleting the animation object
+                del ani
+                
                 self.time_slider.set(original_time)
                 self.update_plot()
-                progress_window.destroy()
+                
+                try:
+                    if progress_window.winfo_exists():
+                        progress_window.destroy()
+                except:
+                    pass  # Window already destroyed
                 
                 messagebox.showinfo("Success", f"Animation exported to:\n{file_path}")
                 return file_path
@@ -330,8 +338,12 @@ class Output2DVisualizer:
                 error_msg = f"Failed to export animation: {str(e)}\n\n{traceback.format_exc()}"
                 messagebox.showerror("Error", error_msg)
                 print(error_msg)
-                if 'progress_window' in locals():
-                    progress_window.destroy()
+            finally:
+                try:
+                    if 'progress_window' in locals() and progress_window.winfo_exists():
+                        progress_window.destroy()
+                except:
+                    pass  # Window already destroyed
         return None
 
     def _render_zb_rhoveg_shaded(self, time_idx):

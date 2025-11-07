@@ -16,6 +16,7 @@ from tkinter import ttk, filedialog, messagebox
 import os
 import numpy as np
 import traceback
+import netCDF4
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
@@ -104,9 +105,6 @@ class AeolisGUI:
         self.create_input_file_tab(tab_control)
         self.create_domain_tab(tab_control)
         self.create_wind_input_tab(tab_control)
-        self.create_timeframe_tab(tab_control)
-        self.create_boundary_conditions_tab(tab_control)
-        self.create_sediment_transport_tab(tab_control)
         self.create_plot_output_2d_tab(tab_control)
         self.create_plot_output_1d_tab(tab_control)
         # Pack the tab control to expand and fill the available space
@@ -616,35 +614,6 @@ class AeolisGUI:
                                          command=self.wind_visualizer.export_windrose_png)
         export_windrose_btn.pack(side=LEFT, padx=5)
 
-    def create_timeframe_tab(self, tab_control):
-        # Create the 'Timeframe' tab
-        tab2 = ttk.Frame(tab_control)
-        tab_control.add(tab2, text='Timeframe')
-
-        # Fields to be displayed in the 'Timeframe' tab
-        fields = ['tstart', 'tstop', 'dt', 'restart', 'refdate']
-        # Create label and entry widgets for each field
-        self.entries.update({field: self.create_label_entry(tab2, f"{field}:", self.dic.get(field, ''), i) for i, field in enumerate(fields)})
-
-    def create_boundary_conditions_tab(self, tab_control):
-        # Create the 'Boundary Conditions' tab
-        tab3 = ttk.Frame(tab_control)
-        tab_control.add(tab3, text='Boundary Conditions')
-
-        # Fields to be displayed in the 'Boundary Conditions' tab
-        fields = ['boundary1', 'boundary2', 'boundary3']
-        # Create label and entry widgets for each field
-        self.entries.update({field: self.create_label_entry(tab3, f"{field}:", self.dic.get(field, ''), i) for i, field in enumerate(fields)})
-
-    def create_sediment_transport_tab(self, tab_control):
-        # Create the 'Sediment Transport' tab
-        tab4 = ttk.Frame(tab_control)
-        tab_control.add(tab4, text='Sediment Transport')
-
-        # Create a 'Save' button
-        save_button = ttk.Button(tab4, text='Save', command=self.save)
-        save_button.pack()
-
     def create_plot_output_2d_tab(self, tab_control):
         # Create the 'Plot Output 2D' tab
         tab5 = ttk.Frame(tab_control)
@@ -1015,7 +984,14 @@ class AeolisGUI:
     def update_1d_time_step(self, value):
         """Deprecated - now handled by visualizer"""
         pass
-        self.update_1d_plot()
+    
+    def update_1d_plot(self):
+        """
+        Update the 1D plot.
+        This is a wrapper method that delegates to the 1D output visualizer.
+        """
+        if hasattr(self, 'output_1d_visualizer'):
+            self.output_1d_visualizer.update_plot()
 
     def get_variable_label(self, var_name):
         """
@@ -1079,10 +1055,6 @@ class AeolisGUI:
 
     def plot_nc_bed_level(self):
         """Plot bed level from NetCDF output file"""
-        if not HAVE_NETCDF:
-            messagebox.showerror("Error", "netCDF4 library is not available!")
-            return
-            
         try:
             # Clear the previous plot
             self.output_ax.clear()
@@ -1179,9 +1151,6 @@ class AeolisGUI:
 
     def plot_nc_wind(self):
         """Plot shear velocity (ustar) from NetCDF output file (uses 'ustar' or computes from 'ustars' and 'ustarn')."""
-        if not HAVE_NETCDF:
-            messagebox.showerror("Error", "netCDF4 library is not available!")
-            return
         try:
             # Clear the previous plot
             self.output_ax.clear()
@@ -1298,13 +1267,20 @@ class AeolisGUI:
             # Get current slider value and update the plot
             current_time = int(self.time_slider.get())
             self.update_time_step(current_time)
+    
+    def update_time_step(self, value):
+        """
+        Update the 2D plot based on the time slider value.
+        This is a wrapper method that delegates to the 2D output visualizer.
+        """
+        if hasattr(self, 'output_2d_visualizer'):
+            # Set the slider to the specified value
+            self.time_slider.set(value)
+            # Update the plot via the visualizer
+            self.output_2d_visualizer.update_plot()
 
     def enable_overlay_vegetation(self):
         """Enable vegetation overlay in the output plot and load vegetation data if needed"""
-        if not HAVE_NETCDF:
-            messagebox.showerror("Error", "netCDF4 library is not available!")
-            return
-
         # Ensure bed data is loaded and slider configured
         if self.nc_data_cache is None:
             self.plot_nc_bed_level()

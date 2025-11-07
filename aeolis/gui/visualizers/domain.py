@@ -312,6 +312,11 @@ class DomainVisualizer:
         
         if file_path:
             try:
+                # Ensure canvas is drawn before saving
+                self.canvas.draw()
+                # Use tight layout to ensure everything fits
+                self.fig.tight_layout()
+                # Save the figure
                 self.fig.savefig(file_path, dpi=300, bbox_inches='tight')
                 messagebox.showinfo("Success", f"Plot exported to:\n{file_path}")
                 return file_path

@@ -11,14 +11,10 @@ Handles visualization of 1D transect data from NetCDF output including:
 import os
 import numpy as np
 import traceback
+import netCDF4
 from tkinter import messagebox, filedialog, Toplevel
 from tkinter import ttk
 
-try:
-    import netCDF4
-    HAVE_NETCDF = True
-except ImportError:
-    HAVE_NETCDF = False
 
 from aeolis.gui.utils import (
     NC_COORD_VARS, VARIABLE_LABELS, VARIABLE_TITLES,
@@ -60,10 +56,6 @@ class Output1DVisualizer:
     
     def load_and_plot(self):
         """Load NetCDF file and plot 1D transect data."""
-        if not HAVE_NETCDF:
-            messagebox.showerror("Error", "netCDF4 library is not available!")
-            return
-            
         try:
             nc_file = self.nc_file_entry_1d.get()
             if not nc_file:
@@ -343,8 +335,12 @@ class Output1DVisualizer:
                 def update_frame(frame_num):
                     self.time_slider_1d.set(frame_num)
                     self.update_plot()
-                    progress_bar['value'] = frame_num + 1
-                    progress_window.update()
+                    try:
+                        if progress_window.winfo_exists():
+                            progress_bar['value'] = frame_num + 1
+                            progress_window.update()
+                    except:
+                        pass  # Window may have been closed
                     return []
                 
                 ani = FuncAnimation(self.transect_fig, update_frame, frames=n_times,
@@ -352,9 +348,17 @@ class Output1DVisualizer:
                 writer = FFMpegWriter(fps=5, bitrate=1800)
                 ani.save(file_path, writer=writer)
                 
+                # Stop the animation by deleting the animation object
+                del ani
+                
                 self.time_slider_1d.set(original_time)
                 self.update_plot()
-                progress_window.destroy()
+                
+                try:
+                    if progress_window.winfo_exists():
+                        progress_window.destroy()
+                except:
+                    pass  # Window already destroyed
                 
                 messagebox.showinfo("Success", f"Animation exported to:\n{file_path}")
                 return file_path
@@ -365,6 +369,10 @@ class Output1DVisualizer:
                 error_msg = f"Failed to export animation: {str(e)}\n\n{traceback.format_exc()}"
                 messagebox.showerror("Error", error_msg)
                 print(error_msg)
-                if 'progress_window' in locals():
-                    progress_window.destroy()
+            finally:
+                try:
+                    if 'progress_window' in locals() and progress_window.winfo_exists():
+                        progress_window.destroy()
+                except:
+                    pass  # Window already destroyed
         return None
