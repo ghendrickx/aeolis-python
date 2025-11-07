@@ -86,6 +86,7 @@ class AeolisGUI:
         # Initialize attributes
         self.nc_data_cache = None
         self.overlay_veg_enabled = False
+        self.entries = {}  # Initialize entries dictionary
         
         self.create_widgets()
 
@@ -231,7 +232,6 @@ class AeolisGUI:
         # Fields to be displayed in the 'Domain Parameters' frame
         fields = ['xgrid_file', 'ygrid_file', 'bed_file', 'ne_file', 'veg_file', 'threshold_file', 'fence_file', 'wave_mask', 'tide_mask', 'threshold_mask']
         # Create label and entry widgets for each field with browse buttons
-        self.entries = {}
         for i, field in enumerate(fields):
             label = ttk.Label(params_frame, text=f"{field}:")
             label.grid(row=i, column=0, sticky=W, pady=2)
@@ -383,8 +383,8 @@ class AeolisGUI:
         
         if file_path:
             try:
-                # Read the new configuration file
-                self.dic = aeolis.inout.read_configfile(file_path)
+                # Read the new configuration file (parse_files=False to get file paths, not loaded arrays)
+                self.dic = aeolis.inout.read_configfile(file_path, parse_files=False)
                 configfile = file_path
                 
                 # Update the current file label
@@ -392,8 +392,11 @@ class AeolisGUI:
                 
                 # Update all entry fields with new values
                 for field, entry in self.entries.items():
+                    value = self.dic.get(field, '')
+                    # Convert None to empty string, otherwise convert to string
+                    value_str = '' if value is None else str(value)
                     entry.delete(0, END)
-                    entry.insert(0, str(self.dic.get(field, '')))
+                    entry.insert(0, value_str)
                 
                 # Update NC file entry if it exists
                 if hasattr(self, 'nc_file_entry'):
@@ -481,6 +484,14 @@ class AeolisGUI:
         if hasattr(self, 'nc_data_cache_1d') and self.nc_data_cache_1d is not None:
             self.update_1d_plot()
 
+    def load_and_plot_wind(self):
+        """
+        Load and plot wind data using the wind visualizer.
+        This is a wrapper method that delegates to the wind visualizer.
+        """
+        if hasattr(self, 'wind_visualizer'):
+            self.wind_visualizer.load_and_plot()
+    
     def browse_wind_file(self):
         """
         Open file dialog to select a wind file.
