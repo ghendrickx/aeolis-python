@@ -124,6 +124,8 @@ MODEL_STATE = {
         'Cu',                               # [kg/m^2] Equilibrium sediment concentration integrated over saltation height
         'Cuf',                              # [kg/m^2] Equilibrium sediment concentration integrated over saltation height, assuming the fluid shear velocity threshold
         'Cu0',                              # [kg/m^2] Flat bad equilibrium sediment concentration integrated over saltation height
+        'Cu_air',                           # [kg/m^2] [NEW] Equilibrium sediment concentration for airborne sediment
+        'Cu_bed',                           # [kg/m^2] [NEW] Equilibrium sediment concentration for bed sediment
         'Ct',                               # [kg/m^2] Instantaneous sediment concentration integrated over saltation height
         'q',                                # [kg/m/s] Instantaneous sediment flux
         'qs',                               # [kg/m/s] Instantaneous sediment flux in x-direction

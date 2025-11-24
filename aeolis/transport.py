@@ -345,6 +345,8 @@ def equilibrium(s, p):
         
         s['Cu']  = np.zeros(uth.shape)
         s['Cuf'] = np.zeros(uth.shape)
+        s['Cu_air'] = np.zeros(uth.shape)
+        s['Cu_bed'] = np.zeros(uth.shape)
     
                 
         ix = (ustar != 0.)*(u != 0.)
@@ -354,6 +356,11 @@ def equilibrium(s, p):
             s['Cuf'][ix] = np.maximum(0., p['Cb'] * rhoa / g * (ustar[ix] - uthf[ix])**3 / u[ix])
             
             s['Cu0'][ix] = np.maximum(0., p['Cb'] * rhoa / g * (ustar0[ix] - uth0[ix])**3 / u[ix])
+
+            # [NEW] Two transport components divided into air and bed interaction
+            s['Cu_air'][ix] = np.maximum(0., p['Cb'] * rhoa / g * (ustar[ix] - uth0[ix])**3 / u[ix])
+            s['Cu_bed'][ix] = s['Cu'][ix].copy() # Temporary solution
+            
             
         elif p['method_transport'].lower() == 'bagnold_gs':
             Dref = 0.000250

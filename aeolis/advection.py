@@ -992,7 +992,7 @@ def solve_SS(self, alpha:float=0., beta:float=1.) -> dict:
                 Ct[0,:,0] =  -2                
                 Ct[-1,:,0] =  -2
 
-            Ct, pickup = sweep(Ct, s['Cu'].copy(), s['mass'].copy(), self.dt, p['T'], s['ds'], s['dn'], s['us'], s['un'],w)
+            Ct, pickup = sweep(Ct, s['Cu_bed'].copy(), s['Cu_air'].copy(), s['mass'].copy(), self.dt, p['T'], s['ds'], s['dn'], s['us'], s['un'],w)
 
     qs = Ct * s['us'] 
     qn = Ct * s['un'] 
@@ -1823,8 +1823,9 @@ def solve_pieter(self, alpha:float=.5, beta:float=1.) -> dict:
 # This function acts as an orchestrator, delegating work to Numba-compiled helper functions.
 # Decorating the orchestrator itself with njit provides no performance benefit,
 # since most of the computation is already handled by optimized Numba functions.
-def sweep(Ct, Cu, mass, dt, Ts, ds, dn, us, un, w):
+def sweep(Ct, Cu_bed, Cu_air, mass, dt, Ts, ds, dn, us, un, w):
 
+    Cu = Cu_bed
 
     pickup = np.zeros(Cu.shape)
     i=0
