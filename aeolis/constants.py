@@ -117,6 +117,8 @@ MODEL_STATE = {
         'SWL',                              # [m] Still Water Level above reference
         'DSWL',                             # [m] Dynamic Still water level above reference (SWL + Set-up)
         'Rti',                              # [-] Factor taking into account sheltering by roughness elements
+
+        'zeta',                             # [-] [NEW] Bed interaction parameter for in advection equation
     ),
     ('ny','nx','nfractions') : (
         'Cu',                               # [kg/m^2] Equilibrium sediment concentration integrated over saltation height
@@ -185,9 +187,13 @@ DEFAULT_CONFIG = {
     'process_fences'                : False,              # Enable the process of sand fencing
     'process_dune_erosion'          : False,              # Enable the process of wave-driven dune erosion
     'process_seepage_face'          : False,              # Enable the process of groundwater seepage (NB. only applicable to positive beach slopes)
+    'process_bedinteraction'        : False,              # Enable the process of bed interaction in the advection equation
+    
     'visualization'                 : False,              # Boolean for visualization of model interpretation before and just after initialization
+    
     'output_sedtrails'              : False,              # NEW! [T/F] Boolean to see whether additional output for SedTRAILS should be generated
     'nfraction_sedtrails'           : 0,                  # [-] Index of selected fraction for SedTRAILS (0 if only one fraction)
+    
     'xgrid_file'                    : None,               # Filename of ASCII file with x-coordinates of grid cells
     'ygrid_file'                    : None,               # Filename of ASCII file with y-coordinates of grid cells
     'bed_file'                      : None,               # Filename of ASCII file with bed level heights of grid cells
@@ -340,6 +346,8 @@ DEFAULT_CONFIG = {
     'rhoveg_max'                    : 0.5,                #maximum vegetation density, only used in duran and moore 14 formulation
     't_veg'                         : 3,                  #time scale of vegetation growth (days), only used in duran and moore 14 formulation
     'v_gam'                         : 1,                  # only used in duran and moore 14 formulation
+
+    'zeta_base'                     : 0.6,                # [m] Base value for bed interaction (0: air-dominated, 1: bed-dominated)
 }
 
 REQUIRED_CONFIG = ['nx', 'ny']
