@@ -259,16 +259,34 @@ def shear(s,p):
                    sep_filter_iterations=p['sep_filter_iterations'],
                    zsep_y_filter=p['zsep_y_filter'])
 
-        s['taus'], s['taun'] = s['shear'].get_shear()
+        s['taus'], s['taun'], s['tausAir'], s['taunAir'] = s['shear'].get_shear()
         s['tau'] = np.hypot(s['taus'], s['taun'])
-        
-        s = stress_velocity(s,p)
                                
         # Returns separation surface     
         if p['process_separation']:
             s['hsep'] = s['shear'].get_separation()
             s['zsep'] = s['hsep'] + s['zb']
+
+        # Set airborne shear stress and zeta in case of bed interaction
+        if p['process_bedinteraction']:
+
+            # Airborne shear stress (not affected by separation)
+            s['tauAir'] = np.hypot(s['tausAir'], s['taunAir'])
+
+            # Bed interaction parameter zeta (towards 1.0 in case of separation)
+            tau_sep = 0.5 
+            slope = 0.2 
+            delta = 1./(slope*tau_sep)  
+            zsepdelta = np.maximum(np.minimum(delta * s['hsep'], 1.), 0.)
+            s['zeta'] = zsepdelta * 1.0 + (1. - zsepdelta) * s['zeta']
+
+
+        else:
+            s['tauAir'] = None
+
         
+        s = stress_velocity(s,p)
+
 
     elif p['process_shear'] and p['ny'] == 0: #NTC - Added in 1D only capabilities
         s = compute_shear1d(s, p)
@@ -333,6 +351,19 @@ def stress_velocity(s, p):
     s['ustar'][ix] = 0.
     s['ustars'][ix] = 0.
     s['ustarn'][ix] = 0.
+
+    if s['tauAir'] is not None:
+
+        s['ustarAir'] = np.sqrt(s['tauAir'] / p['rhoa'])
+
+        ix = s['tauAir'] > 0.
+        s['ustarsAir'][ix] = s['ustarAir'][ix] * s['tausAir'][ix] / s['tauAir'][ix]
+        s['ustarnAir'][ix] = s['ustarAir'][ix] * s['taunAir'][ix] / s['tauAir'][ix]
+
+        ix = s['tauAir'] == 0.
+        s['ustarAir'][ix] = 0.
+        s['ustarsAir'][ix] = 0.
+        s['ustarnAir'][ix] = 0.
 
     return s
 

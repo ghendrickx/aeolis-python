@@ -436,7 +436,7 @@ def non_erodible(s,p):
 
     # Influence of non-erodible layer on bed interaction parameter zeta
     if p['process_bedinteraction']:
-        s['zeta'][ix] = 0.0 # Air-dominated interaction when non-erodible layer is exposed  
+        s['zeta'][ix] = 0. # Air-dominated interaction when non-erodible layer is exposed  
    
     
     return s    

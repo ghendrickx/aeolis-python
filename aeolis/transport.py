@@ -335,6 +335,7 @@ def equilibrium(s, p):
         
         ustar  = s['ustar'][:,:,np.newaxis].repeat(nf, axis=2)
         ustar0 = s['ustar0'][:,:,np.newaxis].repeat(nf, axis=2)
+        ustar_air = s['ustarAir'][:,:,np.newaxis].repeat(nf, axis=2)
         
         uth    = s['uth']
         uthf   = s['uthf']
@@ -345,8 +346,8 @@ def equilibrium(s, p):
         
         s['Cu']  = np.zeros(uth.shape)
         s['Cuf'] = np.zeros(uth.shape)
-        s['Cu_air'] = np.zeros(uth.shape)
-        s['Cu_bed'] = np.zeros(uth.shape)
+        s['CuAir'] = np.zeros(uth.shape)
+        s['CuBed'] = np.zeros(uth.shape)
     
                 
         ix = (ustar != 0.)*(u != 0.)
@@ -358,8 +359,8 @@ def equilibrium(s, p):
             s['Cu0'][ix] = np.maximum(0., p['Cb'] * rhoa / g * (ustar0[ix] - uth0[ix])**3 / u[ix])
 
             # [NEW] Two transport components divided into air and bed interaction
-            s['Cu_air'][ix] = np.maximum(0., p['Cb'] * rhoa / g * (ustar[ix] - uth0[ix])**3 / u[ix])
-            s['Cu_bed'][ix] = s['Cu'][ix].copy() # Temporary solution
+            s['CuAir'][ix] = np.maximum(0., p['Cb'] * rhoa / g * (ustar_air[ix] - uth0[ix])**3 / u[ix])
+            s['CuBed'][ix] = s['Cu'][ix].copy() # Temporary solution
             
             
         elif p['method_transport'].lower() == 'bagnold_gs':

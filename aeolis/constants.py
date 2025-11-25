@@ -43,12 +43,20 @@ INITIAL_STATE = {
         'dtaus',                            # [-] Component of the wind shear perturbation in x-direction
         'dtaun',                            # [-] Component of the wind shear perturbation in y-direction
 
+        'tauAir',                           # [N/m^2] Wind shear stress for airborne sediment
+        'tausAir',                          # [N/m^2] Component of wind shear stress for airborne sediment in x-direction
+        'taunAir',                          # [N/m^2] Component of wind shear stress for airborne sediment in y-direction
+
         'ustar',                            # [m/s] Wind shear velocity
         'ustars',                           # [m/s] Component of wind shear velocity in x-direction
         'ustarn',                           # [m/s] Component of wind shear velocity in y-direction
         'ustar0',                           # [m/s] Wind shear velocity over a flat bed
         'ustars0',                          # [m/s] Component of wind shear velocity in x-direction over a flat bed
         'ustarn0',                          # [m/s] Component of wind shear velocity in y-direction over a flat bed
+
+        'ustarAir',                         # [m/s] Wind shear velocity for airborne sediment
+        'ustarsAir',                        # [m/s] Component of wind shear velocity for airborne sediment in x-direction
+        'ustarnAir',                        # [m/s] Component of wind shear velocity for airborne sediment in y-direction
 
         'udir',                             # [rad] Wind direction
         'zs',                               # [m] Water level above reference (or equal to zb if zb > zs)
@@ -124,8 +132,8 @@ MODEL_STATE = {
         'Cu',                               # [kg/m^2] Equilibrium sediment concentration integrated over saltation height
         'Cuf',                              # [kg/m^2] Equilibrium sediment concentration integrated over saltation height, assuming the fluid shear velocity threshold
         'Cu0',                              # [kg/m^2] Flat bad equilibrium sediment concentration integrated over saltation height
-        'Cu_air',                           # [kg/m^2] [NEW] Equilibrium sediment concentration for airborne sediment
-        'Cu_bed',                           # [kg/m^2] [NEW] Equilibrium sediment concentration for bed sediment
+        'CuAir',                           # [kg/m^2] [NEW] Equilibrium sediment concentration for airborne sediment
+        'CuBed',                           # [kg/m^2] [NEW] Equilibrium sediment concentration for bed sediment
         'Ct',                               # [kg/m^2] Instantaneous sediment concentration integrated over saltation height
         'q',                                # [kg/m/s] Instantaneous sediment flux
         'qs',                               # [kg/m/s] Instantaneous sediment flux in x-direction
@@ -253,7 +261,7 @@ DEFAULT_CONFIG = {
     'L'                             : 100.,               # [m] Typical length scale of dune feature (perturbation)
     'l'                             : 10.,                # [m] Inner layer height (perturbation)
     'c_b'                           : 0.2,                # [-] Slope at the leeside of the separation bubble # c = 0.2 according to Durán 2010 (Sauermann 2001: c = 0.25 for 14 degrees)
-    'mu_b'                          : 30,                 # [deg] Minimum required slope for the start of flow separation
+    'mu_b'                          : 10.,                 # [deg] Minimum required slope for the start of flow separation
     'buffer_width'                  : 10,                 # [m] Width of the bufferzone around the rotational grid for wind perturbation
     'sep_filter_iterations'         : 0,                  # [-] Number of filtering iterations on the sep-bubble (0 = no filtering)
     'zsep_y_filter'                 : False,              # [-] Boolean for turning on/off the filtering of the separation bubble in y-direction

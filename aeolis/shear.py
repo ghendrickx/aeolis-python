@@ -240,6 +240,8 @@ class WindShear:
         # Compute the influence of the separation on the shear stress
         if process_separation:
             gc['hsep'] = gc['z'] - z_origin
+            gc['taux_air'] = gc['taux'].copy()
+            gc['tauy_air'] = gc['tauy'].copy()
             self.separation_shear(gc['hsep'])
 
         if plot:
@@ -255,6 +257,7 @@ class WindShear:
         gc['x'], gc['y'] = self.rotate(gc['x'], gc['y'], -u_angle, origin=(self.x0, self.y0))
         gi['x'], gi['y'] = self.rotate(gi['x'], gi['y'], -u_angle, origin=(self.x0, self.y0))
         gc['taux'], gc['tauy'] = self.rotate(gc['taux'], gc['tauy'], -u_angle)
+        gc['taux_air'], gc['tauy_air'] = self.rotate(gc['taux_air'], gc['tauy_air'], -u_angle)
         
         # =====================================================================
         # Interpolation from the computational grid back to the original
@@ -263,6 +266,8 @@ class WindShear:
         # Interpolate wind shear results to real grid
         gi['taux'] = self.interpolate(gc['x'], gc['y'], gc['taux'], gi['x'], gi['y'], taus0)
         gi['tauy'] = self.interpolate(gc['x'], gc['y'], gc['tauy'], gi['x'], gi['y'], taun0) 
+        gi['taux_air'] = self.interpolate(gc['x'], gc['y'], gc['taux_air'], gi['x'], gi['y'], taus0)
+        gi['tauy_air'] = self.interpolate(gc['x'], gc['y'], gc['tauy_air'], gi['x'], gi['y'], taun0)
         
         if process_separation:
             gi['hsep'] = self.interpolate(gc['x'], gc['y'], gc['hsep'], gi['x'], gi['y'], 0. )
@@ -729,8 +734,10 @@ class WindShear:
 
         taux = self.igrid['taux']
         tauy = self.igrid['tauy']
+        taux_air = self.igrid['taux_air']
+        tauy_air = self.igrid['tauy_air']
             
-        return taux, tauy
+        return taux, tauy, taux_air, tauy_air
         
         
     def add_shear(self):

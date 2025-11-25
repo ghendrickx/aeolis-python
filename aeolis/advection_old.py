@@ -971,10 +971,10 @@ def solve_SS(self, alpha:float=0., beta:float=1.) -> dict:
             Ct = np.zeros(Ct.shape)
             
             if p['boundary_offshore'] == 'flux':
-                Ct[:,0,0] =  p['offshore_flux'] * s['Cu0'][:,0,0] 
+                Ct[:,0,0] =  s['Cu0'][:,0,0] 
 
             if p['boundary_onshore'] == 'flux':
-                Ct[:,-1,0] = p['onshore_flux'] *  s['Cu0'][:,-1,0] 
+                Ct[:,-1,0] =  s['Cu0'][:,-1,0] 
 
             if p['boundary_offshore'] == 'circular':
                 Ct[:,0,0] =  -1                
@@ -991,11 +991,6 @@ def solve_SS(self, alpha:float=0., beta:float=1.) -> dict:
             if p['boundary_lateral'] == 're_circular':
                 Ct[0,:,0] =  -2                
                 Ct[-1,:,0] =  -2
-
-            if p['boundary_lateral'] == 'flux':
-                Ct[0,:,0] = p['lateral_flux'] *  s['Cu0'][0,:,0]
-                Ct[-1,:,0] = p['lateral_flux'] *  s['Cu0'][-1,:,0]
-
 
             Ct, pickup = sweep(Ct, s['CuBed'].copy(), s['CuAir'].copy(), 
                                s['zeta'].copy(), s['mass'].copy(), 
@@ -1841,24 +1836,24 @@ def sweep(Ct, Cu_bed, Cu_air, zeta, mass, dt, Ts, ds, dn, us, un, w):
 
     nf = np.shape(Ct)[2]
 
-    # # Are the lateral boundary conditions circular?
-    # circ_lateral = False
-    # if Ct[0,1,0]==-1:
-    #     circ_lateral = True
-    #     Ct[0,:,0] = 0                
-    #     Ct[-1,:,0] = 0
+    # Are the lateral boundary conditions circular?
+    circ_lateral = False
+    if Ct[0,1,0]==-1:
+        circ_lateral = True
+        Ct[0,:,0] = 0                
+        Ct[-1,:,0] = 0
 
-    # circ_offshore = False
-    # if Ct[1,0,0]==-1:
-    #     circ_offshore = True
-    #     Ct[:,0,0] = 0                
-    #     Ct[:,-1,0] = 0
+    circ_offshore = False
+    if Ct[1,0,0]==-1:
+        circ_offshore = True
+        Ct[:,0,0] = 0                
+        Ct[:,-1,0] = 0
 
-    # recirc_offshore = False
-    # if Ct[1,0,0]==-2:
-    #     recirc_offshore = True
-    #     Ct[:,0,0] = 0                
-    #     Ct[:,-1,0] = 0
+    recirc_offshore = False
+    if Ct[1,0,0]==-2:
+        recirc_offshore = True
+        Ct[:,0,0] = 0                
+        Ct[:,-1,0] = 0
     
     
     ufs = np.zeros((np.shape(us)[0], np.shape(us)[1]+1, np.shape(us)[2]))
@@ -1899,357 +1894,343 @@ def sweep(Ct, Cu_bed, Cu_air, zeta, mass, dt, Ts, ds, dn, us, un, w):
 
     Ct_last = Ct.copy()
 
-    while k==0 or np.any(np.abs(Ct[:,:,i]-Ct_last[:,:,i])>1e-10):
+    while k==0 or np.any(np.abs(Ct[:,:,i]-Ct_last[:,:,i])>1e-6):
     # while k==0 or np.any(np.abs(Ct[:,:,i]-Ct_last[:,:,i])!=0):
         Ct_last = Ct.copy()
 
-        # # lateral boundaries circular
-        # if circ_lateral:
-        #     Ct[0,:,0],Ct[-1,:,0] = Ct[-1,:,0].copy(),Ct[0,:,0].copy()
-        #     # pickup[0,:,0],pickup[-1,:,0] = pickup[-1,:,0].copy(),pickup[0,:,0].copy()
-        # if circ_offshore:
-        #     Ct[:,0,0],Ct[:,-1,0] = Ct[:,-1,0].copy(),Ct[:,0,0].copy()
-        #     # pickup[:,0,0],pickup[:,-1,0] = pickup[:,-1,0].copy(),pickup[:,0,0].copy()
+        # Compute Cu based on air and bed contributions (Cu_air > 0 and Ct_air > 0)
+        w_air = np.zeros(Ct.shape)
+        w_bed = np.zeros(Ct.shape)
+        for i in range(nf):
+            ix = (Cu_air[:,:,i] > 0) & (Ct[:,:,i] > 0)
+            w_air[ix,i] = (1 - zeta[ix]) * Ct[ix,i] / Cu_air[ix,i]
+            w_bed[ix,i] = 1 - w_air[ix,i]
 
-        # if recirc_offshore:
-        #     Ct[:,0,0],Ct[:,-1,0] = np.mean(Ct[:,-2,0]), np.mean(Ct[:,1,0])
-
-        visited = np.zeros(Ct.shape[:2], dtype=np.bool_)
-        quad = np.zeros(Ct.shape[:2], dtype=np.uint8)
+            Cu[ix,i] = w_air[ix,i] * Cu_air[ix,i] + w_bed[ix,i] * Cu_bed[ix,i]
+            Cu[~ix,i] = Cu_bed[~ix,i]
 
 
-        _solve_quadrant1(Ct, Cu_air, Cu_bed, zeta, mass, pickup,
-                          dt, Ts, ds, dn, ufs, ufn, w, visited, quad, nf)
+        # lateral boundaries circular
+        if circ_lateral:
+            Ct[0,:,0],Ct[-1,:,0] = Ct[-1,:,0].copy(),Ct[0,:,0].copy()
+            # pickup[0,:,0],pickup[-1,:,0] = pickup[-1,:,0].copy(),pickup[0,:,0].copy()
+        if circ_offshore:
+            Ct[:,0,0],Ct[:,-1,0] = Ct[:,-1,0].copy(),Ct[:,0,0].copy()
+            # pickup[:,0,0],pickup[:,-1,0] = pickup[:,-1,0].copy(),pickup[:,0,0].copy()
 
-        _solve_quadrant2(Ct, Cu_air, Cu_bed, zeta, mass, pickup,
-                          dt, Ts, ds, dn, ufs, ufn, w, visited, quad, nf)
+        if recirc_offshore:
+            Ct[:,0,0],Ct[:,-1,0] = np.mean(Ct[:,-2,0]), np.mean(Ct[:,1,0])
 
-        _solve_quadrant3(Ct, Cu_air, Cu_bed, zeta, mass, pickup,
-                          dt, Ts, ds, dn, ufs, ufn, w, visited, quad, nf)
+        # Track visited  cells and quadrant classification
+        visited = np.zeros(Cu.shape[:2], dtype=bool)
+        quad = np.zeros(Cu.shape[:2], dtype=np.uint8)
 
-        _solve_quadrant4(Ct, Cu_air, Cu_bed, zeta, mass, pickup,
-                          dt, Ts, ds, dn, ufs, ufn, w, visited, quad, nf)
+    ########################################################################################
+        # in this sweeping algorithm we sweep over the 4 quadrants
+        # assuming that most cells have no converging/divering charactersitics.
+        # In the last quadrant we take converging and diverging cells into account. 
 
-        _solve_generic_stencil(Ct, Cu_air, Cu_bed, zeta, mass, pickup,
-                                dt, Ts, ds, dn, ufs, ufn, w, visited, quad, nf)
-
+        # The First quadrant (Numba-optimized)
+        _solve_quadrant1(Ct, Cu, mass, pickup, dt, Ts, ds, dn, ufs, ufn, w, visited, quad, nf)
         
+        # The second quadrant (Numba-optimized)
+        _solve_quadrant2(Ct, Cu, mass, pickup, dt, Ts, ds, dn, ufs, ufn, w, visited, quad, nf)
+        
+        # The third quadrant (Numba-optimized)
+        _solve_quadrant3(Ct, Cu, mass, pickup, dt, Ts, ds, dn, ufs, ufn, w, visited, quad, nf)
+        
+        # The fourth quadrant (Numba-optimized)
+        _solve_quadrant4(Ct, Cu, mass, pickup, dt, Ts, ds, dn, ufs, ufn, w, visited, quad, nf)
+        
+        # Generic stencil for remaining cells including boundaries (Numba-optimized)
+        _solve_generic_stencil(Ct, Cu, mass, pickup, dt, Ts, ds, dn, ufs, ufn, w, visited, quad, nf)
+
         # check the boundaries of the pickup matrix for unvisited cells
         # print(np.shape(visited[0,:]==False))
         pickup[0,:,0] = pickup[1,:,0].copy() 
         pickup[-1,:,0] = pickup[-2,:,0].copy() 
 
-        omega = 0.99
-        Ct[:] = Ct_last + omega*(Ct - Ct_last)
-
         k+=1
 
-    print(f"Number of sweeps: {k}")
-
-    # # Plotting
+        # diff_Ct = np.abs(Ct[:,:,0] - Ct_last[:,:,0])
+        # print(f"Sweep {k} completed. Max difference in Ct: {diff_Ct.max()}")
+    
+    # Plot
     # import matplotlib.pyplot as plt
-    # plt.figure(figsize=(12, 6))
-    # plt.subplot(1, 2, 1)
-    # plt.title('Sediment Concentration (Ct)')
-    # plt.imshow(Ct[:,:,0], origin='lower', cmap='viridis', vmin=0, vmax=0.05)
+    # plt.imshow(Ct, cmap='viridis')
     # plt.colorbar(label='Ct')
-    # plt.subplot(1, 2, 2)
-    # plt.title('zeta')
-    # plt.imshow(zeta, origin='lower', cmap='viridis')
-    # plt.colorbar(label='zeta')
-    # plt.tight_layout()
     # plt.show()
 
+        # print(k)
+
+
+    # print("q1 = " + str(np.sum(q==1)) + "     q2 = " + str(np.sum(q==2)) \
+    #       + "     q3 = " + str(np.sum(q==3)) + "     q4 = " + str(np.sum(q==4)) \
+    #         + "     q5 = " + str(np.sum(q==5)))
+    # print("pickup deviation percentage = " + str(pickup.sum()/pickup[pickup>0].sum()*100) + " %")
+    # print("pickup deviation percentage = " + str(pickup[1,:,0].sum()/pickup[1,pickup[1,:,0]>0,0].sum()*100) + " %")
+    # print("pickup maximum = " + str(pickup.max()) + " mass max = " + str(mass.max()))
+    # print("pickup minimum = " + str(pickup.min()))
+    # print("pickup average = " + str(pickup.mean()))
+    # print("number of cells for pickup maximum = " + str((pickup == mass.max()).sum()))
+                                                #  pickup[1,:,0].sum()/pickup[1,pickup[1,:,0]<0,0].sum()
+
+    print(f"Number of sweeps: {k}")
     
     return Ct, pickup
 
 
 @njit(cache=True)
-def _solve_quadrant1(Ct, Cu_air, Cu_bed, zeta, mass, pickup,
-                     dt, Ts, ds, dn, ufs, ufn, w, visited, quad, nf):
-
+def _solve_quadrant1(Ct, Cu, mass, pickup, dt, Ts, ds, dn, ufs, ufn, w, visited, quad, nf):
+    """Solve first quadrant (positive flow in both directions) with Numba optimization."""
     for n in range(1, Ct.shape[0]):
         for s in range(1, Ct.shape[1]):
-
-            if ((not visited[n, s]) and
-                (ufn[n,s,0] >= 0) and (ufs[n,s,0] >= 0) and
-                (ufn[n+1,s,0] >= 0) and (ufs[n,s+1,0] >= 0)):
-
-                A = ds[n,s] * dn[n,s]
-
+            if (
+                (not visited[n, s])
+                and (ufn[n, s, 0] >= 0)
+                and (ufs[n, s, 0] >= 0)
+                and (ufn[n + 1, s, 0] >= 0)
+                and (ufs[n, s + 1, 0] >= 0)
+            ):
+                
+                # Compute concentration for all fractions
                 for f in range(nf):
-
-                    # compute a,b
-                    if Cu_air[n,s,f] > 0 and Ct[n,s,f] > 0:
-                        a = (1 - zeta[n,s]) * (Cu_air[n,s,f] - Cu_bed[n,s,f]) / Cu_air[n,s,f]
-                        b = Cu_bed[n,s,f]
-                    else:
-                        a = 0.0
-                        b = Cu_bed[n,s,f]
-
-                    # inflow term
-                    N = (
-                        Ct[n-1,s,f] * ufn[n,s,f] * ds[n,s] +
-                        Ct[n, s-1,f] * ufs[n,s,f] * dn[n,s]
-                    )
-
-                    # denominator term
-                    D = (
-                        ufn[n+1,s,f] * ds[n,s] +
-                        ufs[n, s+1,f] * dn[n,s] +
-                        A / Ts
-                    )
-
-                    Ct_new = (N + w[n,s,f] * b * A/Ts) / (D - w[n,s,f] * a * A/Ts)
-                    Ct[n,s,f] = Ct_new
-
-                    Cu_local = b + a * Ct_new
-                    p = (w[n,s,f] * Cu_local - Ct_new) * dt/Ts
-
-                    if p > mass[n,s,0,f]:
-                        p = mass[n,s,0,f]
-                        N_lim = N + p * A/dt
-                        D_lim = ufn[n+1,s,f] * ds[n,s] + ufs[n,s+1,f] * dn[n,s]
-                        Ct[n,s,f] = N_lim / D_lim
-
-                    pickup[n,s,f] = p
-
-                visited[n,s] = True
-                quad[n,s] = 1
+                    num = (Ct[n - 1, s, f] * ufn[n, s, f] * ds[n, s] + 
+                           Ct[n, s - 1, f] * ufs[n, s, f] * dn[n, s] + 
+                           w[n, s, f] * Cu[n, s, f] * ds[n, s] * dn[n, s] / Ts)
+                    
+                    den = (ufn[n + 1, s, f] * ds[n, s] + 
+                           ufs[n, s + 1, f] * dn[n, s] + 
+                           ds[n, s] * dn[n, s] / Ts)
+                    
+                    Ct[n, s, f] = num / den
+                    
+                    # Calculate pickup
+                    pickup[n, s, f] = (w[n, s, f] * Cu[n, s, f] - Ct[n, s, f]) * dt / Ts
+                    
+                    # Check for supply limitations and re-iterate
+                    if pickup[n, s, f] > mass[n, s, 0, f]:
+                        pickup[n, s, f] = mass[n, s, 0, f]
+                        
+                        num_limited = (Ct[n - 1, s, f] * ufn[n, s, f] * ds[n, s] + 
+                                      Ct[n, s - 1, f] * ufs[n, s, f] * dn[n, s] + 
+                                      pickup[n, s, f] * ds[n, s] * dn[n, s] / dt)
+                        
+                        den_limited = (ufn[n + 1, s, f] * ds[n, s] + 
+                                      ufs[n, s + 1, f] * dn[n, s])
+                        
+                        Ct[n, s, f] = num_limited / den_limited
+                
+                visited[n, s] = True
+                quad[n, s] = 1
 
 
 @njit(cache=True)
-def _solve_quadrant2(Ct, Cu_air, Cu_bed, zeta, mass, pickup,
-                     dt, Ts, ds, dn, ufs, ufn, w, visited, quad, nf):
-
+def _solve_quadrant2(Ct, Cu, mass, pickup, dt, Ts, ds, dn, ufs, ufn, w, visited, quad, nf):
+    """Solve second quadrant (positive n-flow, negative s-flow) with Numba optimization."""
     for n in range(1, Ct.shape[0]):
-        for s in range(Ct.shape[1]-2, -1, -1):
-
-            if ((not visited[n,s]) and
-                (ufn[n,s,0] >= 0) and (ufs[n,s,0] <= 0) and
-                (ufn[n+1,s,0] >= 0) and (ufs[n,s+1,0] <= 0)):
-
-                A = ds[n,s] * dn[n,s]
-
+        for s in range(Ct.shape[1] - 2, -1, -1):
+            if (
+                (not visited[n, s])
+                and (ufn[n, s, 0] >= 0)
+                and (ufs[n, s, 0] <= 0)
+                and (ufn[n + 1, s, 0] >= 0)
+                and (ufs[n, s + 1, 0] <= 0)
+            ):
+                
+                # Compute concentration for all fractions
                 for f in range(nf):
-
-                    if Cu_air[n,s,f] > 0 and Ct[n,s,f] > 0:
-                        a = (1 - zeta[n,s]) * (Cu_air[n,s,f] - Cu_bed[n,s,f]) / Cu_air[n,s,f]
-                        b = Cu_bed[n,s,f]
-                    else:
-                        a = 0.0
-                        b = Cu_bed[n,s,f]
-
-                    N = (
-                        Ct[n-1,s,f] * ufn[n,s,f] * ds[n,s] +
-                        -Ct[n,s+1,f] * ufs[n,s+1,f] * dn[n,s]
-                    )
-
-                    D = (
-                        ufn[n+1,s,f] * ds[n,s] +
-                        -ufs[n,s,f] * dn[n,s] +
-                        A/Ts
-                    )
-
-                    Ct_new = (N + w[n,s,f] * b * A/Ts) / (D - w[n,s,f] * a * A/Ts)
-                    Ct[n,s,f] = Ct_new
-
-                    Cu_local = b + a * Ct_new
-                    p = (w[n,s,f] * Cu_local - Ct_new) * dt/Ts
-
-                    if p > mass[n,s,0,f]:
-                        p = mass[n,s,0,f]
-                        N_lim = N + p*A/dt
-                        D_lim = ufn[n+1,s,f]*ds[n,s] + -ufs[n,s,f]*dn[n,s]
-                        Ct[n,s,f] = N_lim / D_lim
-
-                    pickup[n,s,f] = p
-
-                visited[n,s] = True
-                quad[n,s] = 2
+                    num = (Ct[n - 1, s, f] * ufn[n, s, f] * ds[n, s] + 
+                           -Ct[n, s + 1, f] * ufs[n, s + 1, f] * dn[n, s] + 
+                           w[n, s, f] * Cu[n, s, f] * ds[n, s] * dn[n, s] / Ts)
+                    
+                    den = (ufn[n + 1, s, f] * ds[n, s] + 
+                           -ufs[n, s, f] * dn[n, s] + 
+                           ds[n, s] * dn[n, s] / Ts)
+                    
+                    Ct[n, s, f] = num / den
+                    
+                    # Calculate pickup
+                    pickup[n, s, f] = (w[n, s, f] * Cu[n, s, f] - Ct[n, s, f]) * dt / Ts
+                    
+                    # Check for supply limitations and re-iterate
+                    if pickup[n, s, f] > mass[n, s, 0, f]:
+                        pickup[n, s, f] = mass[n, s, 0, f]
+                        
+                        num_limited = (Ct[n - 1, s, f] * ufn[n, s, f] * ds[n, s] + 
+                                      -Ct[n, s + 1, f] * ufs[n, s + 1, f] * dn[n, s] + 
+                                      pickup[n, s, f] * ds[n, s] * dn[n, s] / dt)
+                        
+                        den_limited = (ufn[n + 1, s, f] * ds[n, s] + 
+                                      -ufs[n, s, f] * dn[n, s])
+                        
+                        Ct[n, s, f] = num_limited / den_limited
+                
+                visited[n, s] = True
+                quad[n, s] = 2
 
 
 @njit(cache=True)
-def _solve_quadrant3(Ct, Cu_air, Cu_bed, zeta, mass, pickup,
-                     dt, Ts, ds, dn, ufs, ufn, w, visited, quad, nf):
-
-    for n in range(Ct.shape[0]-2, -1, -1):
-        for s in range(Ct.shape[1]-2, -1, -1):
-
-            if ((not visited[n,s]) and
-                (ufn[n,s,0] <= 0) and (ufs[n,s,0] <= 0) and
-                (ufn[n+1,s,0] <= 0) and (ufs[n,s+1,0] <= 0)):
-
-                A = ds[n,s] * dn[n,s]
-
+def _solve_quadrant3(Ct, Cu, mass, pickup, dt, Ts, ds, dn, ufs, ufn, w, visited, quad, nf):
+    """Solve third quadrant (negative flow in both directions) with Numba optimization."""
+    for n in range(Ct.shape[0] - 2, -1, -1):
+        for s in range(Ct.shape[1] - 2, -1, -1):
+            if (
+                (not visited[n, s])
+                and (ufn[n, s, 0] <= 0)
+                and (ufs[n, s, 0] <= 0)
+                and (ufn[n + 1, s, 0] <= 0)
+                and (ufs[n, s + 1, 0] <= 0)
+            ):
+                
+                # Compute concentration for all fractions
                 for f in range(nf):
-
-                    if Cu_air[n,s,f] > 0 and Ct[n,s,f] > 0:
-                        a = (1 - zeta[n,s]) * (Cu_air[n,s,f] - Cu_bed[n,s,f]) / Cu_air[n,s,f]
-                        b = Cu_bed[n,s,f]
-                    else:
-                        a = 0.0
-                        b = Cu_bed[n,s,f]
-
-                    N = (
-                        -Ct[n+1,s,f] * ufn[n+1,s,f] * dn[n,s] +
-                        -Ct[n,s+1,f] * ufs[n,s+1,f] * dn[n,s]
-                    )
-
-                    D = (
-                        -ufn[n,s,f] * dn[n,s] +
-                        -ufs[n,s,f] * dn[n,s] +
-                        A/Ts
-                    )
-
-                    Ct_new = (N + w[n,s,f]*b*A/Ts) / (D - w[n,s,f]*a*A/Ts)
-                    Ct[n,s,f] = Ct_new
-
-                    Cu_local = b + a * Ct_new
-                    p = (w[n,s,f]*Cu_local - Ct_new)*dt/Ts
-
-                    if p > mass[n,s,0,f]:
-                        p = mass[n,s,0,f]
-                        N_lim = N + p*A/dt
-                        D_lim = -ufn[n,s,f]*dn[n,s] + -ufs[n,s,f]*dn[n,s]
-                        Ct[n,s,f] = N_lim / D_lim
-
-                    pickup[n,s,f] = p
-
-                visited[n,s] = True
-                quad[n,s] = 3
+                    num = (-Ct[n + 1, s, f] * ufn[n + 1, s, f] * dn[n, s] + 
+                           -Ct[n, s + 1, f] * ufs[n, s + 1, f] * dn[n, s] + 
+                           w[n, s, f] * Cu[n, s, f] * ds[n, s] * dn[n, s] / Ts)
+                    
+                    den = (-ufn[n, s, f] * dn[n, s] + 
+                           -ufs[n, s, f] * dn[n, s] + 
+                           ds[n, s] * dn[n, s] / Ts)
+                    
+                    Ct[n, s, f] = num / den
+                    
+                    # Calculate pickup
+                    pickup[n, s, f] = (w[n, s, f] * Cu[n, s, f] - Ct[n, s, f]) * dt / Ts
+                    
+                    # Check for supply limitations and re-iterate
+                    if pickup[n, s, f] > mass[n, s, 0, f]:
+                        pickup[n, s, f] = mass[n, s, 0, f]
+                        
+                        num_limited = (-Ct[n + 1, s, f] * ufn[n + 1, s, f] * dn[n, s] + 
+                                      -Ct[n, s + 1, f] * ufs[n, s + 1, f] * dn[n, s] + 
+                                      pickup[n, s, f] * ds[n, s] * dn[n, s] / dt)
+                        
+                        den_limited = (-ufn[n, s, f] * dn[n, s] + 
+                                      -ufs[n, s, f] * dn[n, s])
+                        
+                        Ct[n, s, f] = num_limited / den_limited
+                
+                visited[n, s] = True
+                quad[n, s] = 3
 
 
 @njit(cache=True)
-def _solve_quadrant4(Ct, Cu_air, Cu_bed, zeta, mass, pickup,
-                     dt, Ts, ds, dn, ufs, ufn, w, visited, quad, nf):
-
-    for n in range(Ct.shape[0]-2, -1, -1):
+def _solve_quadrant4(Ct, Cu, mass, pickup, dt, Ts, ds, dn, ufs, ufn, w, visited, quad, nf):
+    """Solve fourth quadrant (negative n-flow, positive s-flow) with Numba optimization."""
+    for n in range(Ct.shape[0] - 2, -1, -1):
         for s in range(1, Ct.shape[1]):
-
-            if ((not visited[n,s]) and
-                (ufn[n,s,0] <= 0) and (ufs[n,s,0] >= 0) and
-                (ufn[n+1,s,0] <= 0) and (ufs[n,s+1,0] >= 0)):
-
-                A = ds[n,s] * dn[n,s]
-
+            if (
+                (not visited[n, s])
+                and (ufn[n, s, 0] <= 0)
+                and (ufs[n, s, 0] >= 0)
+                and (ufn[n + 1, s, 0] <= 0)
+                and (ufs[n, s + 1, 0] >= 0)
+            ):
+                
+                # Compute concentration for all fractions
                 for f in range(nf):
-
-                    if Cu_air[n,s,f] > 0 and Ct[n,s,f] > 0:
-                        a = (1 - zeta[n,s])*(Cu_air[n,s,f] - Cu_bed[n,s,f]) / Cu_air[n,s,f]
-                        b = Cu_bed[n,s,f]
-                    else:
-                        a = 0.0
-                        b = Cu_bed[n,s,f]
-
-                    N = (
-                        Ct[n,s-1,f] * ufs[n,s,f] * dn[n,s] +
-                        -Ct[n+1,s,f] * ufn[n+1,s,f] * dn[n,s]
-                    )
-
-                    D = (
-                        ufs[n,s+1,f] * dn[n,s] +
-                        -ufn[n,s,f] * dn[n,s] +
-                        A/Ts
-                    )
-
-                    Ct_new = (N + w[n,s,f]*b*A/Ts) / (D - w[n,s,f]*a*A/Ts)
-                    Ct[n,s,f] = Ct_new
-
-                    Cu_local = b + a * Ct_new
-                    p = (w[n,s,f]*Cu_local - Ct_new)*dt/Ts
-
-                    if p > mass[n,s,0,f]:
-                        p = mass[n,s,0,f]
-                        N_lim = N + p*A/dt
-                        D_lim = ufs[n,s+1,f]*dn[n,s] + -ufn[n,s,f]*dn[n,s]
-                        Ct[n,s,f] = N_lim / D_lim
-
-                    pickup[n,s,f] = p
-
-                visited[n,s] = True
-                quad[n,s] = 4
+                    num = (Ct[n, s - 1, f] * ufs[n, s, f] * dn[n, s] + 
+                           -Ct[n + 1, s, f] * ufn[n + 1, s, f] * dn[n, s] + 
+                           w[n, s, f] * Cu[n, s, f] * ds[n, s] * dn[n, s] / Ts)
+                    
+                    den = (ufs[n, s + 1, f] * dn[n, s] + 
+                           -ufn[n, s, f] * dn[n, s] + 
+                           ds[n, s] * dn[n, s] / Ts)
+                    
+                    Ct[n, s, f] = num / den
+                    
+                    # Calculate pickup
+                    pickup[n, s, f] = (w[n, s, f] * Cu[n, s, f] - Ct[n, s, f]) * dt / Ts
+                    
+                    # Check for supply limitations and re-iterate
+                    if pickup[n, s, f] > mass[n, s, 0, f]:
+                        pickup[n, s, f] = mass[n, s, 0, f]
+                        
+                        num_limited = (Ct[n, s - 1, f] * ufs[n, s, f] * dn[n, s] + 
+                                      -Ct[n + 1, s, f] * ufn[n + 1, s, f] * dn[n, s] + 
+                                      pickup[n, s, f] * ds[n, s] * dn[n, s] / dt)
+                        
+                        den_limited = (ufs[n, s + 1, f] * dn[n, s] + 
+                                      -ufn[n, s, f] * dn[n, s])
+                        
+                        Ct[n, s, f] = num_limited / den_limited
+                
+                visited[n, s] = True
+                quad[n, s] = 4
 
 
 @njit(cache=True)
-def _solve_generic_stencil(Ct, Cu_air, Cu_bed, zeta, mass, pickup,
-                           dt, Ts, ds, dn, ufs, ufn, w, visited, quad, nf):
-
-    Nx, Ny = Ct.shape[0], Ct.shape[1]
-
-    for n in range(1, Nx-1):
-        for s in range(1, Ny-1):
-
-            if not visited[n,s]:
-
-                A = ds[n,s] * dn[n,s]
-
+def _solve_generic_stencil(Ct, Cu, mass, pickup, dt, Ts, ds, dn, ufs, ufn, w, visited, quad, nf):
+    """Solve remaining cells with generic stencil using conditionals (Numba-optimized)."""
+    for n in range(Ct.shape[0] - 2, -1, -1):
+        for s in range(1, Ct.shape[1]):
+            if (not visited[n, s]) and (n != 0) and (s != Ct.shape[1] - 1):
+                # Apply generic stencil with conditionals instead of boolean multiplication
                 for f in range(nf):
-
-                    # Cu = b + a * Ct
-                    if Cu_air[n,s,f] > 0 and Ct[n,s,f] > 0:
-                        a = (1 - zeta[n,s])*(Cu_air[n,s,f] - Cu_bed[n,s,f]) / Cu_air[n,s,f]
-                        b = Cu_bed[n,s,f]
-                    else:
-                        a = 0.0
-                        b = Cu_bed[n,s,f]
-
-                    # start with source term
-                    N = w[n,s,f] * b * A/Ts
-                    D = A/Ts
-
-                    # inflow contributions
-                    if ufn[n,s,0] > 0:
-                        N += Ct[n-1,s,f] * ufn[n,s,f] * ds[n,s]
-                    else:
-                        D += -ufn[n,s,f] * dn[n,s]
-
-                    if ufs[n,s,0] > 0:
-                        N += Ct[n,s-1,f] * ufs[n,s,f] * dn[n,s]
-                    else:
-                        D += -ufs[n,s,f] * dn[n,s]
-
-                    # outflow contributions
-                    if ufn[n+1,s,0] > 0:
-                        D += ufn[n+1,s,f] * ds[n,s]
-                    else:
-                        N += -Ct[n+1,s,f] * ufn[n+1,s,f] * dn[n,s]
-
-                    if ufs[n,s+1,0] > 0:
-                        D += ufs[n,s+1,f] * dn[n,s]
-                    else:
-                        N += -Ct[n,s+1,f] * ufs[n,s+1,f] * dn[n,s]
-
-                    # ---- DENOMINATOR PROTECTION ----
-                    wa = w[n,s,f] * a
-                    if wa > 0.999:
-                        wa = 0.999
-
-                    den = D - wa * A / Ts
-
-                    # In extremely pathological cases D can be tiny; just in case:
-                    if den == 0.0:
-                        den = 1e-12
-
-                    Ct_new = N / den
-                    Ct[n,s,f] = Ct_new
-
-                    Cu_local = b + a * Ct_new
-                    p = (w[n,s,f]*Cu_local - Ct_new)*dt/Ts
-
-                    if p > mass[n,s,0,f]:
-                        p = mass[n,s,0,f]
-                        # recompute limited:
-                        N_lim = N + p*A/dt
-                        # approximate denominator (no source term)
-                        den_lim = D - A/Ts
-                        if abs(den_lim) > 1e-12:
-                            Ct[n,s,f] = N_lim / den_lim
-                        # else: leave Ct[n,s,f] as is
-
-                    pickup[n,s,f] = p
-
-                visited[n,s] = True
-                quad[n,s] = 5
-
-
+                    # Initialize with source term
+                    num = w[n, s, f] * Cu[n, s, f] * ds[n, s] * dn[n, s] / Ts
+                    den = ds[n, s] * dn[n, s] / Ts
+                    
+                    # Add flux contributions conditionally
+                    if ufn[n, s, 0] > 0:
+                        num += Ct[n - 1, s, f] * ufn[n, s, f] * ds[n, s]
+                    
+                    if ufs[n, s, 0] > 0:
+                        num += Ct[n, s - 1, f] * ufs[n, s, f] * dn[n, s]
+                    
+                    if ufn[n + 1, s, 0] < 0:
+                        num += -Ct[n + 1, s, f] * ufn[n + 1, s, f] * dn[n, s]
+                    elif ufn[n + 1, s, 0] > 0:
+                        den += ufn[n + 1, s, f] * ds[n, s]
+                    
+                    if ufs[n, s + 1, 0] < 0:
+                        num += -Ct[n, s + 1, f] * ufs[n, s + 1, f] * dn[n, s]
+                    elif ufs[n, s + 1, 0] > 0:
+                        den += ufs[n, s + 1, f] * dn[n, s]
+                    
+                    if ufn[n, s, 0] < 0:
+                        den += -ufn[n, s, f] * dn[n, s]
+                    
+                    if ufs[n, s, 0] < 0:
+                        den += -ufs[n, s, f] * dn[n, s]
+                    
+                    Ct[n, s, f] = num / den
+                    
+                    # Calculate pickup
+                    pickup[n, s, f] = (w[n, s, f] * Cu[n, s, f] - Ct[n, s, f]) * dt / Ts
+                    
+                    # Check for supply limitations and re-iterate
+                    if pickup[n, s, f] > mass[n, s, 0, f]:
+                        pickup[n, s, f] = mass[n, s, 0, f]
+                        
+                        # Recompute with limited pickup
+                        num_lim = pickup[n, s, f] * ds[n, s] * dn[n, s] / dt
+                        den_lim = 0.0
+                        
+                        if ufn[n, s, 0] > 0:
+                            num_lim += Ct[n - 1, s, f] * ufn[n, s, f] * ds[n, s]
+                        
+                        if ufs[n, s, 0] > 0:
+                            num_lim += Ct[n, s - 1, f] * ufs[n, s, f] * dn[n, s]
+                        
+                        if ufn[n + 1, s, 0] < 0:
+                            num_lim += -Ct[n + 1, s, f] * ufn[n + 1, s, f] * dn[n, s]
+                        elif ufn[n + 1, s, 0] > 0:
+                            den_lim += ufn[n + 1, s, f] * ds[n, s]
+                        
+                        if ufs[n, s + 1, 0] < 0:
+                            num_lim += -Ct[n, s + 1, f] * ufs[n, s + 1, f] * dn[n, s]
+                        elif ufs[n, s + 1, 0] > 0:
+                            den_lim += ufs[n, s + 1, f] * dn[n, s]
+                        
+                        if ufn[n, s, 0] < 0:
+                            den_lim += -ufn[n, s, f] * dn[n, s]
+                        
+                        if ufs[n, s, 0] < 0:
+                            den_lim += -ufs[n, s, f] * dn[n, s]
+                        
+                        Ct[n, s, f] = num_lim / den_lim
+                
+                visited[n, s] = True
+                quad[n, s] = 5
