@@ -421,7 +421,7 @@ def non_erodible(s,p):
     s['zne'][:,:] = p['ne_file'] 
 
     # Determine where ne-layer is "exposed"
-    thuthlyr = 0.01
+    thuthlyr = 0.05
     ix = (s['zb'] <= s['zne'] + thuthlyr)
     
     # Smooth method
@@ -435,8 +435,13 @@ def non_erodible(s,p):
         s['uth'][ix,i] = np.inf   
 
     # Influence of non-erodible layer on bed interaction parameter zeta
+    thuthlyr = 0.05
+    ix = (s['zb'] <= s['zne'] + thuthlyr)
     if p['process_bedinteraction']:
         s['zeta'][ix] = 0. # Air-dominated interaction when non-erodible layer is exposed  
+
+
+
    
     
     return s    

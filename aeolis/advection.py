@@ -1944,9 +1944,9 @@ def sweep(Ct, Cu_bed, Cu_air, zeta, mass, dt, Ts, ds, dn, us, un, w):
 
         k+=1
 
-    print(f"Number of sweeps: {k}")
+    # print(f"Number of sweeps: {k}")
 
-    # # Plotting
+    # Plotting
     # import matplotlib.pyplot as plt
     # plt.figure(figsize=(12, 6))
     # plt.subplot(1, 2, 1)

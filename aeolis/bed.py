@@ -125,12 +125,6 @@ def initialize(s, p):
     # initialize threshold
     if p['threshold_file'] is not None:
         s['uth'] = p['threshold_file'][:,:,np.newaxis].repeat(nf, axis=-1)
-
-    # initialize bed interaction parameter zeta
-    if p['process_bedinteraction']:
-        s['zeta'][:,:] = p['zeta_base']
-    else:
-        s['zeta'][:,:] = 1.0 # Similar to the old advection version without zeta
         
     return s
 
