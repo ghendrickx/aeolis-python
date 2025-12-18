@@ -235,10 +235,10 @@ class WindShear:
         gc['taux'] = np.maximum(gc['taux'], 0.)
 
         # Compute the influence of the separation on the shear stress
+        gc['taux_air'] = gc['taux'].copy()
+        gc['tauy_air'] = gc['tauy'].copy()
         if p['process_separation']:
             gc['hsep'] = gc['z'] - z_origin
-            gc['taux_air'] = gc['taux'].copy()
-            gc['tauy_air'] = gc['tauy'].copy()
             self.separation_shear(gc['hsep'])
 
         if plot:

@@ -58,6 +58,7 @@ import aeolis.netcdf
 import aeolis.constants
 import aeolis.erosion
 import aeolis.vegetation
+import aeolis.grass
 import aeolis.fences
 import aeolis.gridparams
 
@@ -245,8 +246,24 @@ class AeoLiS(IBmi):
                 self.p['nx'] -= 1  
                 self.p['ny'] -= 1
 
-        #self.p['nfractions'] = len(self.p['grain_dist'])
+        # Determine number of grain size fractions
         self.p['nfractions'] = len(self.p['grain_size'])
+
+        # Initilize number of species and size of subgrid for grass model
+        if self.p['method_vegetation'] == 'grass':
+
+            # Determine number of grass species
+            if isinstance(self.p['G_h'], list):
+                self.p['nspecies'] = len(self.p['G_h'])  # number of grass species
+            else:
+                self.p['nspecies'] = 1 
+
+            # Determine size of vegetation subgrid
+            self.p['nx_vsub'] = self.p['nx'] * self.p['veg_res_factor']
+            self.p['ny_vsub'] = self.p['ny'] * self.p['veg_res_factor']
+
+        else:
+            self.p['nspecies'] = 1  # default to one species
 		
         # initialize time
         self.t = self.p['tstart']
@@ -272,7 +289,12 @@ class AeoLiS(IBmi):
         self.s = aeolis.wind.initialize(self.s, self.p)
          
         #initialize vegetation model
-        self.s = aeolis.vegetation.initialize(self.s, self.p)                  
+        if self.p['method_vegetation'] == 'duran':
+            self.s = aeolis.vegetation.initialize(self.s, self.p)
+        elif self.p['method_vegetation'] == 'grass':
+            self.s, self.p = aeolis.grass.initialize(self.s, self.p)  
+        else:
+            logger.log_and_raise('Unknown vegetation method [%s]' % self.p['method_vegetation'], exc=ValueError)                
 
         #initialize fence model
         self.s = aeolis.fences.initialize(self.s, self.p)
@@ -321,18 +343,27 @@ class AeoLiS(IBmi):
     
         # Rotate gridparams, such that the grids is alligned horizontally
         self.s = self.grid_rotate(self.p['alpha'])
-      
-        if np.sum(self.s['uw']) != 0:
-            self.s = aeolis.wind.shear(self.s, self.p)
 
         #compute sand fence shear
         if self.p['process_fences']:
             self.s = aeolis.fences.update_fences(self.s, self.p)
 
-        # compute vegetation shear
+        # compute local vegetation shear reduction
         if self.p['process_vegetation']: 
-            self.s = aeolis.vegetation.vegshear(self.s, self.p)
+            if self.p['method_vegetation'] == 'grass':
+                self.s = aeolis.grass.compute_shear_reduction(self.s, self.p)
         
+        # topographic steering (including Okin on rotating grid)
+        if np.sum(self.s['uw']) != 0:
+            self.s = aeolis.wind.shear(self.s, self.p)
+
+        # apply vegetation shear
+        if self.p['process_vegetation']:
+            if self.p['method_vegetation'] == 'duran':
+                self.s = aeolis.vegetation.vegshear(self.s, self.p)
+            if self.p['method_vegetation'] == 'grass':
+                self.s = aeolis.grass.apply_shear_reduction(self.s, self.p)
+
         # determine optimal time step
         self.dt_prev = self.dt
         if not self.set_timestep(dt):
@@ -384,8 +415,11 @@ class AeoLiS(IBmi):
 
         # grow vegetation
         if self.p['process_vegetation']:
-            self.s = aeolis.vegetation.germinate(self.s, self.p)
-            self.s = aeolis.vegetation.grow(self.s, self.p)
+            if self.p['method_vegetation'] == 'duran':
+                self.s = aeolis.vegetation.germinate(self.s, self.p)
+                self.s = aeolis.vegetation.grow(self.s, self.p)
+            elif self.p['method_vegetation'] == 'grass':
+                self.s = aeolis.grass.update(self.s, self.p)
 
         # increment time
         self.t += self.dt * self.p['accfac']

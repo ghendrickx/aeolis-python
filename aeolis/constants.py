@@ -108,15 +108,17 @@ MODEL_STATE = {
         'zsep',                             # [m] Z level of polynomial that defines the separation bubble
         'hsep',                             # [m] Height of separation bubble = difference between z-level of zsep and of the bed level zb
         'theta_dyn',                        # [degrees] spatially varying dynamic angle of repose for avalanching
-        'rhoveg',                           # [-] Vegetation cover
+        # 'rhoveg',                           # [-] Vegetation cover
         'drhoveg',                          # Change in vegetation cover
-        'hveg',                             # [m] height of vegetation
+        # 'hveg',                             # [m] height of vegetation
         'dhveg',                            # [m] Difference in vegetation height per time step
         'dzbveg',                           # [m] Bed level change used for calculation of vegetation growth
         'germinate',                        # [bool] Newly vegetated due to germination (or establishment) 
         'lateral',                          # [bool] Newly vegetated due to lateral propagation 
         'vegetated',                        # [bool] Vegetated, determines if vegetation growth or burial is allowed
         'vegfac',                           # Vegetation factor to modify shear stress by according to Raupach 1993
+        'Rveg',                             # [-] NEW Vegetation shear reduction factor including Okin effect 
+        'R0veg',                            # [-] NEW Local vegetation shear reduction factor (replaces vegfac)
         'fence_height',                     # Fence height
         'R',                                # [m] wave runup
         'eta',                              # [m] wave setup
@@ -161,8 +163,26 @@ MODEL_STATE = {
     ('ny','nx','nlayers','nfractions') : (
         'mass',                             # [kg/m^2] Sediment mass in bed
     ),
-}
 
+    # Vegetation variables for grass model (original grid)
+    ('ny','nx','nspecies') : (
+        'Nt',                              # [1/m^2] Density of grass tillers
+        'hveg',                            # [m] Average height of the grass tillers
+        'hveg_eff',                        # [m] Effective vegetation height
+        'lamveg',                          # [-] Frontal area density
+        'rhoveg',                          # [-] Cover area density
+    ),
+
+    # Vegetation variables for grass model (refined vegetation grid)
+    ('ny_vsub','nx_vsub') : (
+        'x_vsub',                           # [m] x-coordinates of vegetation subgrid
+        'y_vsub',                           # [m] y-coordinates of vegetation subgrid
+    ),
+    ('ny_vsub','nx_vsub','nspecies') : (
+        'Nt_vsub',                          # [1/m^2] Density of tillers
+        'hveg_vsub',                        # [m] Height of individual tillers
+    )
+}
 
 #: AeoLiS model default configuration
 DEFAULT_CONFIG = {
@@ -318,6 +338,7 @@ DEFAULT_CONFIG = {
     'theta_dyn'                     : 33.,                # [degrees] Initial Dynamic angle of repose, critical dynamic slope for avalanching
     'theta_stat'                    : 34.,                # [degrees] Initial Static angle of repose, critical static slope for avalanching
     'avg_time'                      : 86400.,             # [s] Indication of the time period over which the bed level change is averaged for vegetation growth
+    'T_burial'                      : 86400.*30.,         # [s] NEW! Time scale for sediment burial effect on vegetation growth (replaces avg_time)
     'gamma_vegshear'                : 16.,                # [-] Roughness factor for the shear stress reduction by vegetation
     'hveg_max'                      : 1.,                 # [m] Max height of vegetation
     'dzb_opt'                       : 0.,                 # [m/year] Sediment burial for optimal growth
@@ -344,6 +365,7 @@ DEFAULT_CONFIG = {
     'method_roughness'              : 'constant',         # Name of method to compute the roughness height z0, note that here the z0 = k, which does not follow the definition of Nikuradse where z0 = k/30.
     'method_grainspeed'             : 'windspeed',        # Name of method to assume/compute grainspeed (windspeed, duran, constant)
     'method_shear'                  : 'fft',              # Name of method to compute topographic effects on wind shear stress (fft, quasi2d, duna2d (experimental))
+    'method_vegetation'             : 'duran',            # Name of method to compute vegetation: duran (original) or grass (new framework)
     'max_error'                     : 1e-6,               # [-] Maximum error at which to quit iterative solution in implicit numerical schemes
     'max_iter'                      : 1000,               # [-] Maximum number of iterations at which to quit iterative solution in implicit numerical schemes
     'max_iter_ava'                  : 1000,               # [-] Maximum number of iterations at which to quit iterative solution in avalanching calculation
@@ -364,7 +386,46 @@ DEFAULT_CONFIG = {
     't_veg'                         : 3,                  #time scale of vegetation growth (days), only used in duran and moore 14 formulation
     'v_gam'                         : 1,                  # only used in duran and moore 14 formulation
 
-    'zeta_base'                     : 0.6,                # [m] Base value for bed interaction (0: air-dominated, 1: bed-dominated)
+    # --- Grass vegetation model (new framework) ------------------------------
+    'method_vegetation'     : 'duran',       # ['duran' | 'grass'] Vegetation formulation
+    'veg_res_factor'        : 5,             # [-] Vegetation subgrid refinement factor (dx_veg = dx / factor)
+    'dt_veg'                : 86400.,        # [s] Time step for vegetation growth calculations
+    'species_names'         : ['marram'],    # [-] Name(s) of vegetation species
+    'hveg_file'             : None,          # Filename of ASCII file with initial vegetation height (shape: ny * nx * nspecies)
+    'Nt_file'               : None,          # Filename of ASCII file with initial tiller density (shape: ny * nx * nspecies)
+
+    'd_tiller'              : [0.006],       # [m] Mean tiller diameter
+    'r_stem'                : [0.2],         # [-] Fraction of rigid (non-bending) stem height
+    'alpha_uw'              : [-0.0412],     # [s/m] Wind-speed sensitivity of vegetation bending
+    'alpha_Nt'              : [1.95e-4],     # [m^2] Tiller-density sensitivity of vegetation bending
+    'alpha_0'               : [0.9445],      # [-] Baseline bending factor (no wind, sparse vegetation)
+
+    'G_h'                   : [1.0],         # [m/yr] Intrinsic vertical vegetation growth rate
+    'G_c'                   : [1.5],         # [1/yr] Intrinsic clonal tiller production rate
+    'G_s'                   : [0.01],        # [1/yr] Intrinsic seedling establishment rate
+    'Hveg'                  : [0.8],         # [m] Maximum attainable vegetation height
+    'phi_h'                 : [1.0],         # [-] Saturation exponent for height growth
+
+    'Nt_max'                : [900.0],       # [1/m^2] Maximum attainable tiller density
+    'R_cov'                 : [1.2],         # [m] Radius for neighbourhood density averaging
+
+    'lmax_c'                : [0.9],         # [m] Maximum clonal dispersal distance
+    'mu_c'                  : [2.5],         # [-] Shape parameter of clonal dispersal kernel
+    'alpha_s'               : [4.0],         # [m^2] Scale parameter of seed dispersal kernel
+    'nu_s'                  : [2.5],         # [-] Tail-heaviness of seed dispersal kernel
+
+    'gamma_h'               : [1.0],         # [-] Burial sensitivity of vertical growth
+    'gamma_c'               : [1.0],         # [-] Burial sensitivity of clonal expansion
+    'gamma_s'               : [2.0],         # [-] Burial sensitivity of seed establishment
+    'dzb_opt_h'             : [0.02],        # [m/yr] Optimal burial rate for vertical growth
+    'dzb_opt_c'             : [0.01],        # [m/yr] Optimal burial rate for clonal expansion
+    'dzb_opt_s'             : [0.0],         # [m/yr] Optimal burial rate for seed establishment
+
+    'beta_veg'              : [120.0],       # [-] Vegetation momentum-extraction efficiency (Raupach)
+    'm_veg'                 : [0.4],         # [-] Shear non-uniformity correction factor
+    'c1_okin'               : [0.32],        # [-] Downwind decay coefficient in Okin shear reduction
+    'bounce'                : [0.5],         # [-] Fraction of sediment skimming over vegetation canopy
+
 }
 
 REQUIRED_CONFIG = ['nx', 'ny']
