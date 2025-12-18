@@ -253,8 +253,8 @@ class AeoLiS(IBmi):
         if self.p['method_vegetation'] == 'grass':
 
             # Determine number of grass species
-            if isinstance(self.p['G_h'], list):
-                self.p['nspecies'] = len(self.p['G_h'])  # number of grass species
+            if isinstance(self.p['species_names'], np.ndarray):
+                self.p['nspecies'] = len(self.p['species_names'])  # number of grass species
             else:
                 self.p['nspecies'] = 1 
 
@@ -264,7 +264,11 @@ class AeoLiS(IBmi):
 
         else:
             self.p['nspecies'] = 1  # default to one species
-		
+
+            # Not used if "grass" is not used, but set to avoid errors
+            self.p['nx_vsub'] = self.p['nx'] * 1
+            self.p['ny_vsub'] = self.p['ny'] * 1
+
         # initialize time
         self.t = self.p['tstart']
 

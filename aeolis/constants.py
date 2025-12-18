@@ -108,9 +108,9 @@ MODEL_STATE = {
         'zsep',                             # [m] Z level of polynomial that defines the separation bubble
         'hsep',                             # [m] Height of separation bubble = difference between z-level of zsep and of the bed level zb
         'theta_dyn',                        # [degrees] spatially varying dynamic angle of repose for avalanching
-        # 'rhoveg',                           # [-] Vegetation cover
+        # 'rhoveg',                         # [-] Vegetation cover (now defined via grass module; overlapping name)
+        # 'hveg',                           # [m] height of vegetatiion (now defined via grass module; overlapping name)
         'drhoveg',                          # Change in vegetation cover
-        # 'hveg',                             # [m] height of vegetation
         'dhveg',                            # [m] Difference in vegetation height per time step
         'dzbveg',                           # [m] Bed level change used for calculation of vegetation growth
         'germinate',                        # [bool] Newly vegetated due to germination (or establishment) 

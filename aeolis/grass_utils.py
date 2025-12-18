@@ -16,7 +16,7 @@ def ensure_grass_parameters(p):
     Check the length of grass parameters and make iterable over species.
     """ 
 
-    ns = p['nspecies']
+    ns = p['nspecies'] # based on length of 'species_names'
 
     param_lists = [
         'd_tiller', 'r_stem', 'alpha_uw', 'alpha_Nt', 'alpha_0',
@@ -30,16 +30,17 @@ def ensure_grass_parameters(p):
 
     for param in param_lists:
         if param in p:
-            p[param] = makeiterable(p[param])
+            p[param] = makeiterable(p[param]) # Coverts to array
+
+            # If the parameter length does not match nspecies, extend it
             if len(p[param]) != ns:
-                logger.error(
-                    f"Parameter '{param}' length {len(p[param])} "
-                    f"does not match nspecies {ns}."
-                )
-                raise ValueError(
-                    f"Parameter '{param}' length {len(p[param])} "
-                    f"does not match nspecies {ns}."
-                )
+                if len(p[param]) == 1:
+                    p[param] = np.full(ns, p[param][0]) 
+                    logger.info(f"Parameter '{param}' extended to match nspecies={ns}.")
+                else:
+                    logger.error(f"Parameter '{param}' length does not match nspecies={ns}.")
+                    raise ValueError(f"Parameter '{param}' length does not match nspecies={ns}.")
+                
         else:
             logger.error(f"Parameter '{param}' is missing for grass model.")
             raise KeyError(f"Parameter '{param}' is missing for grass model.")
