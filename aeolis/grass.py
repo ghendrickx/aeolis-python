@@ -59,13 +59,17 @@ def update(s, p):
     All dynamics occur on the vegetation subgrid.
     """
 
-    # --- Time step and resolution factor --------------------------------------
+    # --- Time step and resolution factor ------------------------------------
     dt = p['dt_veg']
     f = p['veg_res_factor']
 
-    # --- Burial smoothing (main grid → subgrid, diagnostic → prognostic) -----
+    # --- Burial smoothing (main grid → subgrid, diagnostic → prognostic) ----
     dzb_main = gutils.smooth_burial(s, p)
     dzb_vsub = gutils.expand_to_subgrid(dzb_main[None, ...], f)[0]
+
+    # --- Expand main-grid state variables to subgrid (for flooding) ---------
+    zb_vsub = gutils.expand_to_subgrid(s['zb'][None, ...], f)[0]
+    TWL_vsub = gutils.expand_to_subgrid(s['TWL'][None, ...], f)[0]
 
     bend = np.zeros((p['nspecies'], p['ny'], p['nx']))
 
@@ -91,6 +95,17 @@ def update(s, p):
         s['Nt_vsub'][ns]   = np.maximum(Nt + dNt, 0.0)
         s['hveg_vsub'][ns] = np.clip(hveg + dhveg, 0.0, p['Hveg'][ns])
 
+        # --- Mortality ------------------------------------------------------
+
+        # Flooding
+        if p['process_tide']:
+            ix_flooded = zb_vsub < TWL_vsub
+            s['hveg_vsub'][ns][ix_flooded] = 0.
+
+        # Diseased (e.g. due to burial)
+        ix_decayed = (s['hveg_vsub'][ns] == 0.0)
+        s['Nt_vsub'][ns][ix_decayed] = 0.0
+            
         # --- Vegetation bending (main grid) ---------------------------------
         bend[ns, :, :] = (p['r_stem'][ns] + (1.0 - p['r_stem'][ns])
                           * (p['alpha_uw'][ns] * s['uw']
