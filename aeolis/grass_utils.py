@@ -75,15 +75,15 @@ def generate_grass_subgrid(x, y, veg_res_factor):
 
 
 def expand_to_subgrid(A, f):
-    """Expand (ns, ny, nx) → (ns, ny*f, nx*f)."""
-    return np.repeat(np.repeat(A, f, axis=1), f, axis=2)
+    """Expand (ny, nx, nspecies) → (ny*f, nx*f, nspecies) by replication."""
+    return np.repeat(np.repeat(A, f, axis=0), f, axis=1)
 
 
 def aggregate_from_subgrid(A, f):
-    """Aggregate (ns, ny*f, nx*f) → (ns, ny, nx) by averaging."""
-    ns, nyf, nxf = A.shape
+    """Aggregate (ny*f, nx*f, nspecies) → (ny, nx, nspecies) by averaging."""
+    nyf, nxf, ns = A.shape
     ny, nx = nyf // f, nxf // f
-    return A.reshape(ns, ny, f, nx, f).mean(axis=(2,4))
+    return A.reshape(ny, f, nx, f, ns).mean(axis=(1,3))
 
 
 def smooth_burial(s, p):
@@ -215,7 +215,6 @@ def apply_clonal_kernel(S_c, kernel):
 
     return dNt_clonal
 
-
 @njit
 def sample_seed_germination(S_s, a_s, nu_s, dx):
     """
@@ -223,46 +222,50 @@ def sample_seed_germination(S_s, a_s, nu_s, dx):
     """
 
     ny, nx = S_s.shape
-
-    # Total seed production rate
-    lambda_total = S_s.sum()
     dNt_seed = np.zeros_like(S_s)
 
+    lambda_total = S_s.sum()
     if lambda_total <= 0.0:
         return dNt_seed
 
-    # Number of seeds this timestep
     n_seeds = np.random.poisson(lambda_total)
-
     if n_seeds == 0:
         return dNt_seed
 
-    # Flatten for weighted source selection
+    # Flatten source strengths
     flat = S_s.ravel()
-    probs = flat / lambda_total
+
+    # Build cumulative distribution
+    cdf = np.empty(flat.size)
+    csum = 0.0
+    for i in range(flat.size):
+        csum += flat[i]
+        cdf[i] = csum
 
     for _ in range(n_seeds):
 
-        # Choose source cell
-        j = np.random.choice(flat.size, p=probs)
+        # --- Weighted source selection (CDF sampling) ---
+        u = np.random.rand() * cdf[-1]
+        j = 0
+        while cdf[j] < u:
+            j += 1
+
         iy = j // nx
         ix = j - iy * nx
 
-        # Sample jump distance from 2Dt distribution
+        # --- Sample jump distance (2Dt) ---
         u = np.random.rand()
         r = np.sqrt(a_s * (u ** (-1.0 / (nu_s - 1.0)) - 1.0))
 
-        # Sample direction
+        # --- Sample direction ---
         theta = 2.0 * np.pi * np.random.rand()
 
-        # Convert to grid offsets
         dy = int(round((np.sin(theta) * r) / dx))
         dx_ = int(round((np.cos(theta) * r) / dx))
 
         yy = iy + dy
         xx = ix + dx_
 
-        # 5. Check bounds
         if 0 <= yy < ny and 0 <= xx < nx:
             dNt_seed[yy, xx] += 1
 
