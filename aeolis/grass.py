@@ -75,38 +75,44 @@ def update(s, p):
     zb_vsub = gutils.expand_to_subgrid(s['zb'][:,:,None], f)[:,:,0]
     TWL_vsub = gutils.expand_to_subgrid(s['TWL'][:,:,None], f)[:,:,0]
 
-    # --- Loop over species (subgrid physics) --------------------------------
-    for ns in range(p['nspecies']):
+    # --- Neighbourhood-averaged densities (all species) ------------------------
+    Nt_avg = np.zeros_like(s['Nt_vsub'])
+    for l in range(p['nspecies']):
+        Nt_avg[:, :, l] = gutils.neighbourhood_average(
+            s['Nt_vsub'][:, :, l], p['R_cov'][l], p['dx_veg'])
 
-        Nt   = s['Nt_vsub'][:,:,ns]
-        hveg = s['hveg_vsub'][:,:,ns]
+    # --- Loop over species (subgrid physics) --------------------------------
+    for k in range(p['nspecies']):
+
+        Nt   = s['Nt_vsub'][:,:,k]
+        hveg = s['hveg_vsub'][:,:,k]
 
         # --- Burial responses ----------------------------------------------
-        B_h = p['gamma_h'][ns] * (dzb_vsub - p['dzb_opt_h'][ns])
-        B_c = np.maximum(p['gamma_c'][ns] * (dzb_vsub - p['dzb_opt_c'][ns]), 0.0)
-        B_s = np.maximum(p['gamma_s'][ns] * (dzb_vsub - p['dzb_opt_s'][ns]), 0.0)
+        B_h = p['gamma_h'][k] * np.abs(dzb_vsub - p['dzb_opt_h'][k])                      # additive factor
+        B_c = np.maximum(1 + p['gamma_c'][k] * np.abs(dzb_vsub - p['dzb_opt_c'][k]), 0.0) # multiplicative factor
+        B_s = np.maximum(1 + p['gamma_s'][k] * np.abs(dzb_vsub - p['dzb_opt_s'][k]), 0.0) # multiplicative factor
 
         # --- Spreading ------------------------------------------------------
-        dNt = spreading(ns, Nt, hveg, p, s) # [tillers/s]
+        dNt = spreading(k, Nt, hveg, Nt_avg, B_c, B_s, p, s)                        # [tillers/dt]
 
         # --- Local growth ---------------------------------------------------
-        dhveg = p['G_h'][ns] * (1.0 - hveg / p['Hveg'][ns])**p['phi_h'][ns] + B_h   # [m/s]
+        dhveg = p['G_h'][k] * (1.0 - hveg / p['Hveg'][k])**p['phi_h'][k] + B_h      # [m/s]
         dhveg = dhveg * dt - hveg / np.maximum(Nt, 1e-6) * dNt                      # [m/dt]
 
         # --- Update prognostic subgrid state --------------------------------
-        s['Nt_vsub'][:,:,ns]   = np.maximum(Nt + dNt, 0.0)
-        s['hveg_vsub'][:,:,ns] = np.clip(hveg + dhveg, 0.0, p['Hveg'][ns])
+        s['Nt_vsub'][:,:,k]   = np.maximum(Nt + dNt, 0.0)
+        s['hveg_vsub'][:,:,k] = np.clip(hveg + dhveg, 0.0, p['Hveg'][k])
 
         # --- Mortality ------------------------------------------------------
 
         # Flooding
         if p['process_tide']:
             ix_flooded = zb_vsub < TWL_vsub
-            s['hveg_vsub'][:,:,ns][ix_flooded] = 0.
+            s['hveg_vsub'][:,:,k][ix_flooded] = 0.
 
         # Diseased (e.g. due to burial)
-        ix_decayed = (s['hveg_vsub'][:,:,ns] == 0.0)
-        s['Nt_vsub'][:,:,ns][ix_decayed] = 0.0
+        ix_decayed = (s['hveg_vsub'][:,:,k] == 0.0)
+        s['Nt_vsub'][:,:,k][ix_decayed] = 0.0
 
     # --- Aggregate back to main grid (diagnostic only) ----------------------
     s['Nt']       = gutils.aggregate_from_subgrid(s['Nt_vsub'], f)
@@ -114,12 +120,11 @@ def update(s, p):
 
     # --- Vegetation bending -------------------------------------------------
     bend = np.ones_like(s['hveg'])
-    for ns in range(p['nspecies']):
-        bend[:,:,ns] = (p['r_stem'][ns] + 
-                        (1.0 - p['r_stem'][ns])
-                        * (p['alpha_uw'][ns] * s['uw']
-                         + p['alpha_Nt'][ns] * s['Nt'][:,:,ns] 
-                         + p['alpha_0'][ns]))
+    for k in range(p['nspecies']):
+        bend[:,:,k] = (p['r_stem'][k] + (1.0 - p['r_stem'][k])
+                       * (p['alpha_uw'][k] * s['uw']
+                         + p['alpha_Nt'][k] * s['Nt'][:,:,k] 
+                         + p['alpha_0'][k]))
     
     # --- Main-grid vegetation metrics --------------------------------------
     s['hveg_eff'] = np.clip(s['hveg'] * bend, 0.0, s['hveg'])
@@ -127,28 +132,35 @@ def update(s, p):
     s['rhoveg'] = s['Nt'] * np.pi * (p['d_tiller'] / 2.0)**2
 
 
-def spreading(ns, Nt, hveg, p, s):
+def spreading(k, Nt, hveg, Nt_avg, B_c, B_s, p, s):
     """
     Spatial redistribution of vegetation:
     clonal expansion and seed dispersal.
     """
 
-    # --- Neighbourhood average density --------------------------------------
-    Nt_avg = gutils.neighbourhood_average(Nt, p['R_cov'][ns], p['dx_veg'])
-    saturation = np.maximum(1.0 - Nt_avg / p['Nt_max'][ns], 0.0)
-    maturity = np.clip(hveg / p['Hveg'][ns], 0.0, 1.0)
+    # --- Competition-weighted relative densities (Option B) --------------------
+    comp = np.zeros_like(Nt)
+    for l in range(p['nspecies']):
+        comp += p['alpha_comp'][k, l] * (Nt_avg[:, :, l] / p['Nt_max'][l])
+
+    saturation = np.maximum(1.0 - comp / p['Nt_max'][k], 0.0)
+
+    maturity = np.clip(hveg / p['Hveg'][k], 0.0, 1.0)
 
     # --- Tiller production rates --------------------------------------------
-    S_c = p['G_c'][ns] * Nt * maturity * saturation  # [tillers/s] clonal rate 
-    S_s = p['G_s'][ns] * Nt * maturity               # [tillers/s] seed rate
+    S_c = p['G_c'][k] * Nt * B_c * maturity * saturation    # [tillers/s] clonal rate 
+    S_s = p['G_s'][k] * Nt * B_s * maturity                 # [tillers/s] seed rate
+    
+    S_c *= p['dt_veg']                                      # [tillers/dt]
+    S_s *= p['dt_veg']                                      # [tillers/dt]
 
     # --- Clonal expansion ---------------------------------------------------
-    dNt_clonal = gutils.apply_clonal_kernel(S_c, s['kernel_c'][ns])
-    Nt_clonal_new = np.random.poisson(dNt_clonal * p['dt_veg'])
+    dNt_clonal = gutils.apply_clonal_kernel(S_c, s['kernel_c'][k])
+    Nt_clonal_new = np.random.poisson(dNt_clonal)
 
     # --- Seed dispersal -----------------------------------------------------
-    Nt_seed_new = gutils.sample_seed_germination(S_s, p['alpha_s'][ns], 
-                                                 p['nu_s'][ns], p['dx_veg'])
+    Nt_seed_new = gutils.sample_seed_germination(S_s, p['alpha_s'][k], 
+                                                 p['nu_s'][k], p['dx_veg'])
 
     # --- Sum contributions --------------------------------------------------
     dNt = Nt_clonal_new + Nt_seed_new
@@ -166,13 +178,13 @@ def compute_shear_reduction(s, p):
     w_sum = np.zeros_like(s['R0veg'])
 
     # --- Species-weighted frontal density ----------------------------------
-    for ns in range(p['nspecies']):
-        maturity = s['hveg'][:,:,ns] / p['Hveg'][ns]
-        density  = s['Nt'][:,:,ns] / p['Nt_max'][ns]
+    for k in range(p['nspecies']):
+        maturity = s['hveg'][:,:,k] / p['Hveg'][k]
+        density  = s['Nt'][:,:,k] / p['Nt_max'][k]
         w = maturity * density
 
         # Compute shear reduction per species
-        R0veg += w * 1.0 / np.sqrt(1.0 + p['m_veg'][ns] * p['beta_veg'][ns] * s['lamveg'][:,:,ns])
+        R0veg += w * 1.0 / np.sqrt(1.0 + p['m_veg'][k] * p['beta_veg'][k] * s['lamveg'][:,:,k])
         w_sum += w
 
     # Normalize weighted sum

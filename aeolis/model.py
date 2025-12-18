@@ -422,8 +422,13 @@ class AeoLiS(IBmi):
             if self.p['method_vegetation'] == 'duran':
                 self.s = aeolis.vegetation.germinate(self.s, self.p)
                 self.s = aeolis.vegetation.grow(self.s, self.p)
+
+            # update grass when dt_veg has passed
             elif self.p['method_vegetation'] == 'grass':
-                self.s = aeolis.grass.update(self.s, self.p)
+                self.tveg += self.dt * self.p['accfac']
+                if self.tveg >= self.p['dt_veg']:
+                    self.s = aeolis.grass.update(self.s, self.p)
+                    self.tveg -= self.p['dt_veg']
 
         # increment time
         self.t += self.dt * self.p['accfac']
@@ -944,6 +949,7 @@ class AeoLiSRunner(AeoLiS):
 
         self.t0 = None
         self.tout = 0.
+        self.tveg = 0.
         self.tlog = 0.
         self.plog = -1.
         self.trestart = 0.

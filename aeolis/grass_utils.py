@@ -30,6 +30,11 @@ def ensure_grass_parameters(p):
 
     for param in param_lists:
         if param in p:
+
+            # Check if the parameter is converted to a string
+            if isinstance(p[param], str):
+                p[param] = [float(t) for t in p[param].replace(',', ' ').split()]
+
             p[param] = makeiterable(p[param]) # Coverts to array
 
             # If the parameter length does not match nspecies, extend it
@@ -44,6 +49,37 @@ def ensure_grass_parameters(p):
         else:
             logger.error(f"Parameter '{param}' is missing for grass model.")
             raise KeyError(f"Parameter '{param}' is missing for grass model.")
+        
+    # Handle alpha_comp separately as it is a matrix (nspecies x nspecies)
+    if 'alpha_comp' in p:
+
+        # Check if (elements of) alpha_comp is converted to a string
+        if isinstance(p['alpha_comp'], str):
+            p['alpha_comp'] = [float(t) for t in p['alpha_comp'].replace(',', ' ').split()]
+        if isinstance(p['alpha_comp'], ndarray) and p['alpha_comp'].dtype.type is np.str_:
+            p['alpha_comp'] = [float(item) for sublist in p['alpha_comp'] for item in sublist.replace(',', ' ').split()]
+
+        p['alpha_comp'] = makeiterable(p['alpha_comp'])
+
+        if p['alpha_comp'].size == 1:
+            p['alpha_comp'] = np.zeros((ns, ns))
+            np.fill_diagonal(p['alpha_comp'], 1.0)
+
+        elif p['alpha_comp'].size == ns * ns:
+            p['alpha_comp'] = p['alpha_comp'].reshape((ns, ns))
+
+        else:
+            logger.error(f"Parameter 'alpha_comp' length must be {ns*ns} ({ns} x {ns}).")
+            raise ValueError(f"Parameter 'alpha_comp' length must be {ns*ns} ({ns} x {ns}).")
+    else:
+        p['alpha_comp'] = np.zeros((ns, ns))
+
+    # --- Check intraspecific competition ---------------------------------------
+    for k in range(ns):
+        if p['alpha_comp'][k, k] != 1.0:
+            logger.error(f"alpha_comp[{k},{k}] = {p['alpha_comp'][k,k]:.3f}. Expected value is 1.0 (equal to intraspecific competition).")
+            raise ValueError(f"alpha_comp[{k},{k}] = {p['alpha_comp'][k,k]:.3f}. Expected value is 1.0 (equal to intraspecific competition).")
+
             
     return p
             

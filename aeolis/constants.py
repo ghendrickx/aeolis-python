@@ -408,6 +408,9 @@ DEFAULT_CONFIG = {
 
     'Nt_max'                : [900.0],       # [1/m^2] Maximum attainable tiller density
     'R_cov'                 : [1.2],         # [m] Radius for neighbourhood density averaging
+    'alpha_comp'            : [0.],          # [-] Lotka–Volterra competition coefficients
+                                             #      shape: nspecies * nspecies (flattened)
+                                             #      alpha_comp[k,l] = effect of species l on species k
 
     'lmax_c'                : [0.9],         # [m] Maximum clonal dispersal distance
     'mu_c'                  : [2.5],         # [-] Shape parameter of clonal dispersal kernel
