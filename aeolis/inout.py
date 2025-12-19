@@ -216,10 +216,10 @@ def check_configuration(p):
         logger.warning('Wind velocity threshold based on salt content following Nickling and '
                        'Ecclestone (1981) is implemented for testing only. Use with care.')
         
-    if p['method_roughness'] == 'constant':        
-        logger.warning('Warning: the used roughness method (constant) defines the z0 as '
-                       'k (z0 = k), this was implemented to ensure backward compatibility '
-                       'and does not follow the definition of Nikuradse (z0 = k / 30).')
+    # if p['method_roughness'] == 'constant':        
+    #     logger.warning('Warning: the used roughness method (constant) defines the z0 as '
+    #                    'k (z0 = k), this was implemented to ensure backward compatibility '
+    #                    'and does not follow the definition of Nikuradse (z0 = k / 30).')
     
     # check if steadystate solver is used with multiple sediment fractions
     if p['solver'].lower() in ['steadystate', 'steadystatepieter']:
@@ -401,8 +401,7 @@ def visualize_grid(s, p):
     # Figure lay-out settings
     fig.colorbar(pc, ax=ax)
     ax.axis('equal')
-    ax.set_xlim([np.min(x) - 0.15*xylen, np.max(x) + 0.15*xylen])
-    ax.set_ylim([np.min(y) - 0.15*xylen, np.max(y) + 0.15*xylen])
+    ax.margins(0.15)
     height = 8.26772 # A4 width
     width = 11.6929 # A4 height
     fig.set_size_inches(width, height)
@@ -476,6 +475,15 @@ def visualize_timeseries(p, t):
     fig.savefig('figure_timeseries_initialization.png', dpi=200)
     plt.close()
 
+def safe_quiver(ax, x, y, U, V):
+    mask = np.isfinite(U) & np.isfinite(V)
+    ax.quiver(
+        x[mask], y[mask],
+        U[mask], V[mask],
+        scale_units='xy',
+        scale=1.0,
+        angles='xy'
+    )
 
 def visualize_spatial(s, p):
     '''Create figures and tables for the user to check whether the input is correctly interpreted'''
@@ -505,11 +513,15 @@ def visualize_spatial(s, p):
     import warnings 
     warnings.filterwarnings("ignore", category=UserWarning)
 
+    # Remove the nspecies dimension for plotting for rhoveg
+    if s['rhoveg'].ndim == 3:
+        rhoveg = s['rhoveg'][:, :, 0]
+
     # Plotting colormeshes
     if p['ny'] > 0:
         pcs[0][0] = axs[0,0].pcolormesh(x, y, s['zb'], cmap='viridis')
         pcs[0][1] = axs[0,1].pcolormesh(x, y, s['zne'], cmap='viridis')
-        pcs[0][2] = axs[0,2].pcolormesh(x, y, s['rhoveg'], cmap='Greens', clim= [0, 1])
+        pcs[0][2] = axs[0,2].pcolormesh(x, y, rhoveg, cmap='Greens', clim= [0, 1])
         pcs[1][0] = axs[1,0].pcolormesh(x, y, s['uw'], cmap='plasma')
         pcs[1][1] = axs[1,1].pcolormesh(x, y, s['ustar'], cmap='plasma')
         pcs[1][2] = axs[1,2].pcolormesh(x, y, s['u'][:, :, 0], cmap='plasma')
@@ -525,7 +537,7 @@ def visualize_spatial(s, p):
     else:
         pcs[0][0] = axs[0,0].scatter(x, y, c=s['zb'], cmap='viridis')
         pcs[0][1] = axs[0,1].scatter(x, y, c=s['zne'], cmap='viridis')
-        pcs[0][2] = axs[0,2].scatter(x, y, c=s['rhoveg'], cmap='Greens', clim= [0, 1])
+        pcs[0][2] = axs[0,2].scatter(x, y, c=rhoveg, cmap='Greens', clim= [0, 1])
         pcs[1][0] = axs[1,0].scatter(x, y, c=s['uw'], cmap='plasma')
         pcs[1][1] = axs[1,1].scatter(x, y, c=s['ustar'], cmap='plasma')
         pcs[1][2] = axs[1,2].scatter(x, y, c=s['tau'], cmap='plasma')
@@ -544,9 +556,9 @@ def visualize_spatial(s, p):
 
     # Quiver for vectors
     skip = 10
-    axs[1,0].quiver(x[::skip, ::skip], y[::skip, ::skip], s['uws'][::skip, ::skip], s['uwn'][::skip, ::skip])
-    axs[1,1].quiver(x[::skip, ::skip], y[::skip, ::skip], s['ustars'][::skip, ::skip], s['ustarn'][::skip, ::skip])
-    axs[1,2].quiver(x[::skip, ::skip], y[::skip, ::skip], s['us'][::skip, ::skip, 0], s['un'][::skip, ::skip, 0])
+    safe_quiver(axs[1,0], x[::skip, ::skip], y[::skip, ::skip], s['uws'][::skip, ::skip], s['uwn'][::skip, ::skip])
+    safe_quiver(axs[1,1], x[::skip, ::skip], y[::skip, ::skip], s['ustars'][::skip, ::skip], s['ustarn'][::skip, ::skip])
+    safe_quiver(axs[1,2], x[::skip, ::skip], y[::skip, ::skip], s['us'][::skip, ::skip, 0], s['un'][::skip, ::skip, 0])
 
     # Adding titles to the plots
     axs[0,0].set_title('Bed level, zb (m)')
@@ -571,9 +583,8 @@ def visualize_spatial(s, p):
         # Figure lay-out settings
             fig.colorbar(pcs[irow][icol], ax=ax)
             ax.axis('equal')
+            ax.margins(0.15)
             xylen = np.maximum(xlen, ylen)
-            ax.set_xlim([np.min(x) - 0.15*xylen, np.max(x) + 0.15*xylen])
-            ax.set_ylim([np.min(y) - 0.15*xylen, np.max(y) + 0.15*xylen])
             ax.axes.xaxis.set_visible(False)
             ax.axes.yaxis.set_visible(False)
             width = 8.26772*2 # A4 width

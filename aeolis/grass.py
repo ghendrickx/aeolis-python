@@ -94,19 +94,17 @@ def update(s, p):
 
         # --- Spreading ------------------------------------------------------
         dNt = spreading(k, Nt, hveg, Nt_avg, B_c, B_s, p, s)                        # [tillers/dt]
+        s['Nt_vsub'][:,:,k] = np.maximum(Nt + dNt, 0.0)
+        ix_vegetated = (Nt > 0.0)
 
         # --- Local growth ---------------------------------------------------
         dhveg = p['G_h'][k] * (1.0 - hveg / p['Hveg'][k])**p['phi_h'][k] + B_h      # [m/s]
         dhveg = dhveg * dt - hveg / np.maximum(Nt, 1e-6) * dNt                      # [m/dt]
-
-        # --- Update prognostic subgrid state --------------------------------
-        s['Nt_vsub'][:,:,k]   = np.maximum(Nt + dNt, 0.0)
         s['hveg_vsub'][:,:,k] = np.clip(hveg + dhveg, 0.0, p['Hveg'][k])
+        s['hveg_vsub'][:,:,k][~ix_vegetated] = 0.0
 
         # --- Mortality ------------------------------------------------------
-
-        # Flooding
-        if p['process_tide']:
+        if p['process_tide']: # Flooding
             ix_flooded = zb_vsub < TWL_vsub
             s['hveg_vsub'][:,:,k][ix_flooded] = 0.
 
@@ -131,6 +129,8 @@ def update(s, p):
     s['lamveg'] = s['Nt'] * s['hveg_eff'] * p['d_tiller']
     s['rhoveg'] = s['Nt'] * np.pi * (p['d_tiller'] / 2.0)**2
 
+    return s
+
 
 def spreading(k, Nt, hveg, Nt_avg, B_c, B_s, p, s):
     """
@@ -143,7 +143,7 @@ def spreading(k, Nt, hveg, Nt_avg, B_c, B_s, p, s):
     for l in range(p['nspecies']):
         comp += p['alpha_comp'][k, l] * (Nt_avg[:, :, l] / p['Nt_max'][l])
 
-    saturation = np.maximum(1.0 - comp / p['Nt_max'][k], 0.0)
+    saturation = np.maximum(1.0 - comp, 0.0)
 
     maturity = np.clip(hveg / p['Hveg'][k], 0.0, 1.0)
 

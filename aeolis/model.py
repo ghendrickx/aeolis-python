@@ -24,8 +24,14 @@ The Netherlands                  The Netherlands
 
 '''
 
-
 from __future__ import absolute_import, division
+
+import warnings
+warnings.filterwarnings(
+    "ignore",
+    message="pkg_resources is deprecated as an API",
+    category=UserWarning
+)
 
 import os
 import importlib.machinery

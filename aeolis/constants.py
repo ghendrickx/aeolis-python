@@ -401,8 +401,8 @@ DEFAULT_CONFIG = {
     'alpha_0'               : [0.9445],      # [-] Baseline bending factor (no wind, sparse vegetation)
 
     'G_h'                   : [1.0],         # [m/yr] Intrinsic vertical vegetation growth rate
-    'G_c'                   : [1.5],         # [1/yr] Intrinsic clonal tiller production rate
-    'G_s'                   : [0.01],        # [1/yr] Intrinsic seedling establishment rate
+    'G_c'                   : [2.5],         # [tillers/tiller/yr] Intrinsic clonal tiller production rate
+    'G_s'                   : [0.01],        # [tillers/tiller/yr] Intrinsic seedling establishment rate
     'Hveg'                  : [0.8],         # [m] Maximum attainable vegetation height
     'phi_h'                 : [1.0],         # [-] Saturation exponent for height growth
 
@@ -419,14 +419,14 @@ DEFAULT_CONFIG = {
 
     'gamma_h'               : [1.0],         # [-] Burial sensitivity of vertical growth
     'gamma_c'               : [1.0],         # [-] Burial sensitivity of clonal expansion
-    'gamma_s'               : [2.0],         # [-] Burial sensitivity of seed establishment
-    'dzb_opt_h'             : [0.02],        # [m/yr] Optimal burial rate for vertical growth
-    'dzb_opt_c'             : [0.01],        # [m/yr] Optimal burial rate for clonal expansion
-    'dzb_opt_s'             : [0.0],         # [m/yr] Optimal burial rate for seed establishment
+    'gamma_s'               : [10.0],        # [-] Burial sensitivity of seed establishment
+    'dzb_opt_h'             : [0.5],         # [m/yr] Optimal burial rate for vertical growth
+    'dzb_opt_c'             : [0.5],         # [m/yr] Optimal burial rate for clonal expansion
+    'dzb_opt_s'             : [0.025],         # [m/yr] Optimal burial rate for seed establishment
 
     'beta_veg'              : [120.0],       # [-] Vegetation momentum-extraction efficiency (Raupach)
     'm_veg'                 : [0.4],         # [-] Shear non-uniformity correction factor
-    'c1_okin'               : [0.32],        # [-] Downwind decay coefficient in Okin shear reduction
+    'c1_okin'               : [0.48],        # [-] Downwind decay coefficient in Okin shear reduction
     'bounce'                : [0.5],         # [-] Fraction of sediment skimming over vegetation canopy
 
 }
