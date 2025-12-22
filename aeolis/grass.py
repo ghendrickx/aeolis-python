@@ -89,8 +89,8 @@ def update(s, p):
 
         # --- Burial responses ----------------------------------------------
         B_h = p['gamma_h'][k] * np.abs(dzb_vsub - p['dzb_opt_h'][k])                      # additive factor
-        B_c = np.maximum(1 + p['gamma_c'][k] * np.abs(dzb_vsub - p['dzb_opt_c'][k]), 0.0) # multiplicative factor
-        B_s = np.maximum(1 + p['gamma_s'][k] * np.abs(dzb_vsub - p['dzb_opt_s'][k]), 0.0) # multiplicative factor
+        B_c = np.maximum(1 - p['gamma_c'][k] * np.abs(dzb_vsub - p['dzb_opt_c'][k]), 0.0) # multiplicative factor
+        B_s = np.maximum(1 - p['gamma_s'][k] * np.abs(dzb_vsub - p['dzb_opt_s'][k]), 0.0) # multiplicative factor
 
         # --- Spreading ------------------------------------------------------
         dNt = spreading(k, Nt, hveg, Nt_avg, B_c, B_s, p, s)                        # [tillers/dt]
@@ -149,7 +149,7 @@ def spreading(k, Nt, hveg, Nt_avg, B_c, B_s, p, s):
 
     # --- Tiller production rates --------------------------------------------
     S_c = p['G_c'][k] * Nt * B_c * maturity * saturation    # [tillers/s] clonal rate 
-    S_s = p['G_s'][k] * Nt * B_s * maturity                 # [tillers/s] seed rate
+    S_s = p['G_s'][k] * Nt * B_s * maturity * saturation    # [tillers/s] seed rate
     
     S_c *= p['dt_veg']                                      # [tillers/dt]
     S_s *= p['dt_veg']                                      # [tillers/dt]
@@ -173,25 +173,52 @@ def compute_shear_reduction(s, p):
     Compute vegetation-induced shear reduction.
     """
 
-    s['R0veg'] = np.ones((p['ny']+1, p['nx']+1))
-    R0veg = np.zeros_like(s['R0veg'])
-    w_sum = np.zeros_like(s['R0veg'])
+    # --- Weights for normalization -----------------------------------------
+    w_sum = np.zeros_like(s['x'])
+    w_num_R0 = np.zeros_like(s['x'])
+    w_num_R  = np.zeros_like(s['x'])
 
-    # --- Species-weighted frontal density ----------------------------------
+    # --- Wind convention ID (Numba) -----------------------------------------
+    if p['wind_convention'] == 'nautical':
+        udir_id = 0
+    elif p['wind_convention'] == 'cartesian':
+        udir_id = 1
+    else:
+        raise ValueError(f"Unknown wind_convention: {p['wind_convention']}")
+
+    # --- Loop over species: compute per-species local and leeside reduction --
     for k in range(p['nspecies']):
-        maturity = s['hveg'][:,:,k] / p['Hveg'][k]
-        density  = s['Nt'][:,:,k] / p['Nt_max'][k]
+
+        # Weighting function based on maturity and density
+        maturity = s['hveg'][:, :, k] / p['Hveg'][k]
+        density  = s['Nt'][:, :, k] / p['Nt_max'][k]
         w = maturity * density
 
-        # Compute shear reduction per species
-        R0veg += w * 1.0 / np.sqrt(1.0 + p['m_veg'][k] * p['beta_veg'][k] * s['lamveg'][:,:,k])
-        w_sum += w
+        # Local Raupach reduction per species (no weighting / no normalization)
+        R0_k = 1.0 / np.sqrt(1.0 + p['m_veg'][k] * p['beta_veg'][k] * s['lamveg'][:, :, k])
 
-    # Normalize weighted sum
+        # Leeside Okin reduction per species (optional)
+        if p['process_vegetation_leeside']:
+            R_k = gutils.compute_okin_reduction(
+                s['x'], s['y'], R0_k, s['udir'], s['hveg_eff'][:, :, k], p['c1_okin'][k], udir_id)
+        else:
+            R_k = R0_k
+
+        # Accumulate weighted numerators for later normalization
+        w_sum   += w
+        w_num_R0 += w * R0_k
+        w_num_R  += w * R_k
+
+    # --- Final normalization (separate loop / block) ------------------------
+    s['R0veg'] = np.ones_like(s['x'])
+    s['Rveg']  = np.ones_like(s['x'])
+
     ix = w_sum != 0.0
-    s['R0veg'][ix] = R0veg[ix] / w_sum[ix]
+    s['R0veg'][ix] = w_num_R0[ix] / w_sum[ix]
+    s['Rveg'][ix]  = w_num_R[ix]  / w_sum[ix]
 
     return s
+
 
 
 def apply_shear_reduction(s, p):
