@@ -139,6 +139,11 @@ def interpolate(s, p, t):
                     s['TWL'][iy][:] = s['SWL'][iy][:]  + s['R'][iy][:]
                     s['DSWL'][iy][:] = s['SWL'][iy][:] + s['eta'][iy][:]            # Was s['zs'] before
 
+            
+            else: # No run-up processing
+                s['TWL'][:] = s['SWL'][:]
+                s['DSWL'][:] = s['SWL'][:]
+
             # Alters wave height based on maximum wave height over depth ratio, gamma default = 0.5
             s['Hs'] = np.minimum(h * p['gamma'], s['Hs'])
 
@@ -146,9 +151,12 @@ def interpolate(s, p, t):
             s['Hs'] = apply_mask(s['Hs'], s['wave_mask'])
             s['Tp'] = apply_mask(s['Tp'], s['wave_mask'])
 
-        else:
+        else: # No wave processing
             s['Hs'] = s['zb'] * 0.
             s['Tp'] = s['zb'] * 0.
+
+            s['TWL'][:] = s['SWL'][:]
+            s['DSWL'][:] = s['SWL'][:]
 
     # apply complex mask (also for external model input)
     else:
