@@ -3,14 +3,12 @@ from aeolis.console_debug import aeolis_debug
 import cProfile
 
 def main()-> None:
-    '''Runs AeoLiS model in debugging mode.'''
+    '''Runs AeoLiS model in debugging mode. Run this script to start AeoLiS with debugging features enabled, 
+    such as step-by-step execution and detailed logging. Useful for development and troubleshooting.
+    '''
 
-    # configfile = r'c:\Users\weste_bt\aeolis\Tests\RotatingWind\Barchan_Grid270\aeolis.txt'
-    configfile = r'C:\Users\svries\Documents\GitHub\Bart_mass\aeolis_duran.txt'
-    # configfile = r'C:\Users\svries\Documents\GitHub\Bart_mass\aeolis_windspeed.txt'
-
+    configfile = r'c:\Users\aeolis.txt' # Path to the configuration file
     aeolis_debug(configfile)
-
 
 if __name__ == '__main__':
     main()
