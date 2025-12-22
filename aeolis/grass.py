@@ -22,7 +22,9 @@ def initialize(s, p):
     p = gutils.ensure_grass_parameters(p)
 
     # --- Convert yearly to secondly rates ------------------------------------
-    for param in ['G_h', 'G_c', 'G_s', 'dzb_opt_h', 'dzb_opt_c', 'dzb_opt_s']:
+    for param in ['G_h', 'G_c', 'G_s', 
+                  'dzb_tol_h', 'dzb_tol_c', 'dzb_tol_s',
+                  'dzb_opt_h', 'dzb_opt_c', 'dzb_opt_s']:
         p[param] /= (365.25 * 24.0 * 3600.0)
 
     # --- Read main-grid vegetation state variables --------------------------
@@ -88,9 +90,9 @@ def update(s, p):
         hveg = s['hveg_vsub'][:,:,k]
 
         # --- Burial responses ----------------------------------------------
-        B_h = p['gamma_h'][k] * np.abs(dzb_vsub - p['dzb_opt_h'][k])                      # additive factor
-        B_c = np.maximum(1 - p['gamma_c'][k] * np.abs(dzb_vsub - p['dzb_opt_c'][k]), 0.0) # multiplicative factor
-        B_s = np.maximum(1 - p['gamma_s'][k] * np.abs(dzb_vsub - p['dzb_opt_s'][k]), 0.0) # multiplicative factor
+        B_h = - np.abs(dzb_vsub - p['dzb_opt_h'][k]) / p['dzb_tol_h'][k]                        # additive factor
+        B_c = np.maximum(1.0 - np.abs(dzb_vsub - p['dzb_opt_c'][k]) / p['dzb_tol_c'][k], 0.0)   # multiplicative factor
+        B_s = np.maximum(1.0 - np.abs(dzb_vsub - p['dzb_opt_s'][k]) / p['dzb_tol_s'][k], 0.0)   # multiplicative factor
 
         # --- Spreading ------------------------------------------------------
         dNt = spreading(k, Nt, hveg, Nt_avg, B_c, B_s, p, s)                        # [tillers/dt]

@@ -23,7 +23,7 @@ def ensure_grass_parameters(p):
         'G_h', 'G_c', 'G_s', 'Hveg', 'phi_h',
         'Nt_max', 'R_cov',
         'lmax_c', 'mu_c', 'alpha_s', 'nu_s',
-        'gamma_h', 'gamma_c', 'gamma_s',
+        'dzb_tol_h', 'dzb_tol_c', 'dzb_tol_s',
         'dzb_opt_h', 'dzb_opt_c', 'dzb_opt_s',
         'beta_veg', 'm_veg', 'c1_okin', 'bounce'
         ]
@@ -306,3 +306,100 @@ def sample_seed_germination(S_s, a_s, nu_s, dx):
             dNt_seed[yy, xx] += 1
 
     return dNt_seed
+
+
+@njit
+def compute_okin_reduction(x, y, R0, udir, hveg_eff, c1, wind_convention_id):
+    """
+    Compute Okin leeside shear reduction for a single species.
+
+    Parameters
+    ----------
+    x, y               : 2D arrays of cell-center coordinates [m]
+    R0                 : 2D array of local Raupach reduction [-]
+    udir               : 2D array of wind direction [deg]
+    hveg_eff           : 2D array of effective vegetation height [m]
+    c1                 : Okin calibration constant [-]
+    wind_convention_id : int
+                          0 = nautical (from North, clockwise)
+                          1 = cartesian (0° = +x, CCW)
+
+    Returns
+    -------
+    R : 2D array of shear reduction including leeside effects [-]
+    """
+
+    ny, nx = x.shape
+    R = np.ones((ny, nx))
+
+    # grid spacing (assumed uniform)
+    dx = np.sqrt((x[0, 1] - x[0, 0])**2 + (y[0, 1] - y[0, 0])**2)
+    W = 2.0 * dx
+
+    deg2rad = np.pi / 180.0
+    R_end = 0.99
+
+    # Loop over source cells
+    for iy in range(ny):
+        for ix in range(nx):
+
+            R0_ij = R0[iy, ix]
+            if R0_ij >= 1.0:
+                continue
+
+            h_ij = hveg_eff[iy, ix]
+            if h_ij <= 0.0:
+                continue
+
+            # Local wind direction at source cell
+            if wind_convention_id == 0:      # nautical
+                th = (270.0 - udir[iy, ix]) * deg2rad
+            else:                            # cartesian
+                th = udir[iy, ix] * deg2rad
+
+            ux = np.cos(th)
+            uy = np.sin(th)
+
+            # Max downwind distance (R = R_end)
+            L_end = -(h_ij / c1) * np.log((1.0 - R_end) / (1.0 - R0_ij))
+            r = int(L_end / dx) + 2 # margin
+
+            # Compute window bounds
+            j0 = max(0, iy - r)
+            j1 = min(ny, iy + r + 1)
+            i0 = max(0, ix - r)
+            i1 = min(nx, ix + r + 1)
+
+            # Loop over target cells in window
+            x0 = x[iy, ix]
+            y0 = y[iy, ix]
+            for jy in range(j0, j1):
+                for jx in range(i0, i1):
+
+                    # Distance from source to target
+                    rx = x[jy, jx] - x0
+                    ry = y[jy, jx] - y0
+
+                    # Along-wind distance
+                    s = rx * ux + ry * uy
+                    if s <= 0.0 or s > L_end:
+                        continue
+
+                    # Perpendicular distance
+                    d_perp = np.sqrt((rx - s * ux)**2 + (ry - s * uy)**2)
+                    if d_perp >= W:
+                        continue
+
+                    # Okin along-wind reduction
+                    R_s = 1.0 - (1.0 - R0_ij) * np.exp(-s * c1 / h_ij)
+
+                    # Cross-wind triangular weighting (width = 2*dx)
+                    w = 1.0 - d_perp / W
+                    R_loc = 1.0 - w * (1.0 - R_s)
+
+                    # Strongest reduction wins
+                    if R_loc < R[jy, jx]:
+                        R[jy, jx] = R_loc
+
+    return R
+

@@ -516,6 +516,8 @@ def visualize_spatial(s, p):
     # Remove the nspecies dimension for plotting for rhoveg
     if s['rhoveg'].ndim == 3:
         rhoveg = s['rhoveg'][:, :, 0]
+    else:
+        rhoveg = s['rhoveg']
 
     # Plotting colormeshes
     if p['ny'] > 0:

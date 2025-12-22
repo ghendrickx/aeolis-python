@@ -214,6 +214,7 @@ DEFAULT_CONFIG = {
     'process_inertia'               : False,              # NEW
     'process_separation'            : False,              # Enable the including of separation bubble
     'process_vegetation'            : False,              # Enable the process of vegetation
+    'process_vegetation_leeside'    : False,              # Enable the process of leeside vegetation effects on shear stress
     'process_fences'                : False,              # Enable the process of sand fencing
     'process_dune_erosion'          : False,              # Enable the process of wave-driven dune erosion
     'process_seepage_face'          : False,              # Enable the process of groundwater seepage (NB. only applicable to positive beach slopes)
@@ -417,12 +418,12 @@ DEFAULT_CONFIG = {
     'alpha_s'               : [4.0],         # [m^2] Scale parameter of seed dispersal kernel
     'nu_s'                  : [2.5],         # [-] Tail-heaviness of seed dispersal kernel
 
-    'gamma_h'               : [1.0],         # [-] Burial sensitivity of vertical growth
-    'gamma_c'               : [1.0],         # [-] Burial sensitivity of clonal expansion
-    'gamma_s'               : [10.0],        # [-] Burial sensitivity of seed establishment
+    'dzb_tol_h'             : [1.0],         # [m/yr] Tolerance burial range for vertical growth
+    'dzb_tol_c'             : [1.0],         # [m/yr] Tolerance burial range for clonal expansion
+    'dzb_tol_s'             : [0.1],         # [m/yr] Tolerance burial range for seed establishment
     'dzb_opt_h'             : [0.5],         # [m/yr] Optimal burial rate for vertical growth
     'dzb_opt_c'             : [0.5],         # [m/yr] Optimal burial rate for clonal expansion
-    'dzb_opt_s'             : [0.025],         # [m/yr] Optimal burial rate for seed establishment
+    'dzb_opt_s'             : [0.025],       # [m/yr] Optimal burial rate for seed establishment
 
     'beta_veg'              : [120.0],       # [-] Vegetation momentum-extraction efficiency (Raupach)
     'm_veg'                 : [0.4],         # [-] Shear non-uniformity correction factor
