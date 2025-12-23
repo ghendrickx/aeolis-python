@@ -418,7 +418,7 @@ DEFAULT_CONFIG = {
     'alpha_s'               : [4.0],         # [m^2] Scale parameter of seed dispersal kernel
     'nu_s'                  : [2.5],         # [-] Tail-heaviness of seed dispersal kernel
 
-    'dzb_tol_h'             : [1.0],         # [m/yr] Tolerance burial range for vertical growth
+    'gamma_h'               : [1.0],         # [-] Sensitivity of vertical growth to burial (1 / dzb_tol_h)
     'dzb_tol_c'             : [1.0],         # [m/yr] Tolerance burial range for clonal expansion
     'dzb_tol_s'             : [0.1],         # [m/yr] Tolerance burial range for seed establishment
     'dzb_opt_h'             : [0.5],         # [m/yr] Optimal burial rate for vertical growth

@@ -6,6 +6,7 @@ Contains long, technical, or reusable logic only.
 import numpy as np
 import logging
 from numba import njit
+import matplotlib.pyplot as plt
 
 from aeolis.utils import *
 
@@ -23,7 +24,7 @@ def ensure_grass_parameters(p):
         'G_h', 'G_c', 'G_s', 'Hveg', 'phi_h',
         'Nt_max', 'R_cov',
         'lmax_c', 'mu_c', 'alpha_s', 'nu_s',
-        'dzb_tol_h', 'dzb_tol_c', 'dzb_tol_s',
+        'gamma_h', 'dzb_tol_c', 'dzb_tol_s',
         'dzb_opt_h', 'dzb_opt_c', 'dzb_opt_s',
         'beta_veg', 'm_veg', 'c1_okin', 'bounce'
         ]
@@ -309,17 +310,16 @@ def sample_seed_germination(S_s, a_s, nu_s, dx):
 
 
 @njit
-def compute_okin_reduction(x, y, R0, udir, hveg_eff, c1, wind_convention_id):
+def compute_okin_reduction(x, y, R0, udir, L_decay, wind_convention_id):
     """
-    Compute Okin leeside shear reduction for a single species.
+    Compute Okin leeside shear reduction using an effective decay length.
 
     Parameters
     ----------
     x, y               : 2D arrays of cell-center coordinates [m]
     R0                 : 2D array of local Raupach reduction [-]
     udir               : 2D array of wind direction [deg]
-    hveg_eff           : 2D array of effective vegetation height [m]
-    c1                 : Okin calibration constant [-]
+    L_decay            : 2D array of Okin decay length h/c1 [m]
     wind_convention_id : int
                           0 = nautical (from North, clockwise)
                           1 = cartesian (0° = +x, CCW)
@@ -334,7 +334,6 @@ def compute_okin_reduction(x, y, R0, udir, hveg_eff, c1, wind_convention_id):
 
     # grid spacing (assumed uniform)
     dx = np.sqrt((x[0, 1] - x[0, 0])**2 + (y[0, 1] - y[0, 0])**2)
-    W = 2.0 * dx
 
     deg2rad = np.pi / 180.0
     R_end = 0.99
@@ -347,8 +346,8 @@ def compute_okin_reduction(x, y, R0, udir, hveg_eff, c1, wind_convention_id):
             if R0_ij >= 1.0:
                 continue
 
-            h_ij = hveg_eff[iy, ix]
-            if h_ij <= 0.0:
+            L_ij = L_decay[iy, ix]
+            if L_ij <= 0.0:
                 continue
 
             # Local wind direction at source cell
@@ -361,8 +360,8 @@ def compute_okin_reduction(x, y, R0, udir, hveg_eff, c1, wind_convention_id):
             uy = np.sin(th)
 
             # Max downwind distance (R = R_end)
-            L_end = -(h_ij / c1) * np.log((1.0 - R_end) / (1.0 - R0_ij))
-            r = int(L_end / dx) + 2 # margin
+            L_end = -L_ij * np.log((1.0 - R_end) / (1.0 - R0_ij))
+            r = int(L_end / dx) + 2  # margin
 
             # Compute window bounds
             j0 = max(0, iy - r)
@@ -376,7 +375,6 @@ def compute_okin_reduction(x, y, R0, udir, hveg_eff, c1, wind_convention_id):
             for jy in range(j0, j1):
                 for jx in range(i0, i1):
 
-                    # Distance from source to target
                     rx = x[jy, jx] - x0
                     ry = y[jy, jx] - y0
 
@@ -387,14 +385,17 @@ def compute_okin_reduction(x, y, R0, udir, hveg_eff, c1, wind_convention_id):
 
                     # Perpendicular distance
                     d_perp = np.sqrt((rx - s * ux)**2 + (ry - s * uy)**2)
-                    if d_perp >= W:
+                    if d_perp >= dx:
                         continue
 
-                    # Okin along-wind reduction
-                    R_s = 1.0 - (1.0 - R0_ij) * np.exp(-s * c1 / h_ij)
+                    # Possible debug visualization
+                    # debug_okin_geometry(x, y, iy, ix, jy, jx, ux, uy, L_end, W)
+
+                    # Okin along-wind reduction (using decay length)
+                    R_s = 1.0 - (1.0 - R0_ij) * np.exp(-s / L_ij)
 
                     # Cross-wind triangular weighting (width = 2*dx)
-                    w = 1.0 - d_perp / W
+                    w = 1.0 - d_perp / dx
                     R_loc = 1.0 - w * (1.0 - R_s)
 
                     # Strongest reduction wins
@@ -402,4 +403,41 @@ def compute_okin_reduction(x, y, R0, udir, hveg_eff, c1, wind_convention_id):
                         R[jy, jx] = R_loc
 
     return R
+
+
+def debug_okin_geometry(x, y, iy, ix, jy, jx, ux, uy, L_end, W):
+    """
+    Visualize Okin geometry for one source cell (iy,ix)
+    and one target cell (jy,jx).
+    """
+
+    # Extract coordinates
+    x0 = x[iy, ix]
+    y0 = y[iy, ix]
+    xt = x[jy, jx]
+    yt = y[jy, jx]
+    rx = xt - x0
+    ry = yt - y0
+    s = rx * ux + ry * uy
+
+    # Projection point on ray
+    xp = x0 + s * ux
+    yp = y0 + s * uy
+    d_perp = np.sqrt((rx - s * ux)**2 + (ry - s * uy)**2)
+
+    # Plotting
+    fig, ax = plt.subplots(figsize=(6, 6))
+    ax.scatter(x, y, s=10, c='lightgray', label='grid') # grid points
+    ax.scatter(x0, y0, c='red', s=80, label='source') # source cell
+    ax.scatter(xt, yt, c='blue', s=80, label='target') # target cell
+    ax.plot([x0, x0 + L_end * ux],[y0, y0 + L_end * uy],'r--', lw=2, label='wind ray')
+    ax.plot([xt, xp], [yt, yp], 'k:', lw=2, label='d_perp')
+    ax.set_aspect('equal')
+    ax.set_title(
+        f"s = {s:.2f}, d_perp = {d_perp:.2f}\n"
+        f"rx = {rx:.2f}, ry = {ry:.2f}"
+    )
+    ax.legend()
+    plt.show()
+
 

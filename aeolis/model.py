@@ -357,11 +357,6 @@ class AeoLiS(IBmi):
         #compute sand fence shear
         if self.p['process_fences']:
             self.s = aeolis.fences.update_fences(self.s, self.p)
-
-        # compute local vegetation shear reduction
-        if self.p['process_vegetation']: 
-            if self.p['method_vegetation'] == 'grass':
-                self.s = aeolis.grass.compute_shear_reduction(self.s, self.p)
         
         # topographic steering (including Okin on rotating grid)
         if np.sum(self.s['uw']) != 0:
@@ -372,6 +367,7 @@ class AeoLiS(IBmi):
             if self.p['method_vegetation'] == 'duran':
                 self.s = aeolis.vegetation.vegshear(self.s, self.p)
             if self.p['method_vegetation'] == 'grass':
+                self.s = aeolis.grass.compute_shear_reduction(self.s, self.p)
                 self.s = aeolis.grass.apply_shear_reduction(self.s, self.p)
 
         # determine optimal time step
@@ -428,7 +424,6 @@ class AeoLiS(IBmi):
             if self.p['method_vegetation'] == 'duran':
                 self.s = aeolis.vegetation.germinate(self.s, self.p)
                 self.s = aeolis.vegetation.grow(self.s, self.p)
-
             # update grass when dt_veg has passed
             elif self.p['method_vegetation'] == 'grass':
                 self.tveg += self.dt * self.p['accfac']
