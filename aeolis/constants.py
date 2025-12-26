@@ -24,69 +24,91 @@ The Netherlands                  The Netherlands
 
 '''
 
+# Question; what are the different purposes of INITIAL_STATE and MODEL_STATE?
 
 #: Aeolis model state variables
 INITIAL_STATE = {
     ('ny', 'nx') : (
+
+        # --- Wind ----------------------------------------------------------------------------------------------------
         'uw',                               # [m/s] Wind velocity
         'uws',                              # [m/s] Component of wind velocity in x-direction
         'uwn',                              # [m/s] Component of wind velocity in y-direction
-        
+        'udir',                             # [rad] Wind direction
+
+        # --- Shear stress and velocity -------------------------------------------------------------------------------
+
+        # Overall shear stress and velocity
         'tau',                              # [N/m^2] Wind shear stress
         'taus',                             # [N/m^2] Component of wind shear stress in x-direction
         'taun',                             # [N/m^2] Component of wind shear stress in y-direction
-        'tau0',                             # [N/m^2] Wind shear stress over a flat bed
-        'taus0',                            # [N/m^2] Component of wind shear stress in x-direction over a flat bed
-        'taun0',                            # [N/m^2] Component of wind shear stress in y-direction over a flat bed
-        'taus_u',                           # [N/m^2] Saved direction of wind shear stress in x-direction
-        'taun_u',                           # [N/m^2] Saved direction of wind shear stress in y-direction
         'dtaus',                            # [-] Component of the wind shear perturbation in x-direction
         'dtaun',                            # [-] Component of the wind shear perturbation in y-direction
-
-        'tauAir',                           # [N/m^2] Wind shear stress for airborne sediment
-        'tausAir',                          # [N/m^2] Component of wind shear stress for airborne sediment in x-direction
-        'taunAir',                          # [N/m^2] Component of wind shear stress for airborne sediment in y-direction
-
         'ustar',                            # [m/s] Wind shear velocity
         'ustars',                           # [m/s] Component of wind shear velocity in x-direction
         'ustarn',                           # [m/s] Component of wind shear velocity in y-direction
+        # 'taus_u',                         # REMOVE? [N/m^2] Saved direction of wind shear stress in x-direction
+        # 'taun_u',                         # REMOVE? [N/m^2] Saved direction of wind shear stress in y-direction
+
+        # Shear stress over a flat bed
+        'tau0',                             # [N/m^2] Wind shear stress over a flat bed
+        'taus0',                            # [N/m^2] Component of wind shear stress in x-direction over a flat bed
+        'taun0',                            # [N/m^2] Component of wind shear stress in y-direction over a flat bed
         'ustar0',                           # [m/s] Wind shear velocity over a flat bed
         'ustars0',                          # [m/s] Component of wind shear velocity in x-direction over a flat bed
         'ustarn0',                          # [m/s] Component of wind shear velocity in y-direction over a flat bed
 
+        # Shear stress and velocity for airborne sediment (only topographic steering, no supply-limitations or reduction)
+        'tauAir',                           # [N/m^2] Wind shear stress for airborne sediment
+        'tausAir',                          # [N/m^2] Component of wind shear stress for airborne sediment in x-direction
+        'taunAir',                          # [N/m^2] Component of wind shear stress for airborne sediment in y-direction
         'ustarAir',                         # [m/s] Wind shear velocity for airborne sediment
         'ustarsAir',                        # [m/s] Component of wind shear velocity for airborne sediment in x-direction
         'ustarnAir',                        # [m/s] Component of wind shear velocity for airborne sediment in y-direction
 
-        'udir',                             # [rad] Wind direction
+        # --- Water levels and waves ----------------------------------------------------------------------------------
+        'zne',                              # [m] Non-erodible layer
         'zs',                               # [m] Water level above reference (or equal to zb if zb > zs)
         'SWL',                              # [m] Still water level above reference
         'Hs',                               # [m] Wave height
         'Hsmix',                            # [m] Wave height for mixing (including setup, TWL)
         'Tp',                               # [s] Wave period for wave runup calculations
-        'zne',                              # [m] Non-erodible layer
+
     ),
 }
 
 MODEL_STATE = {
     ('ny', 'nx') : (
+
+        # --- Basic grid and bed properties ---------------------------------------------------------------------------
         'x',                                # [m] Real-world x-coordinate of grid cell center
         'y',                                # [m] Real-world y-coordinate of grid cell center
         'ds',                               # [m] Real-world grid cell size in x-direction
         'dn',                               # [m] Real-world grid cell size in y-direction
         'dsdn',                             # [m^2] Real-world grid cell surface area
         'dsdni',                            # [m^-2] Inverse of real-world grid cell surface area
-#        'alfa',                             # [rad] Real-world grid cell orientation #Sierd_comm in later releases this needs a revision 
+#        'alfa',                            # REMOVE? [rad] Real-world grid cell orientation #Sierd_comm in later releases this needs a revision 
+
+        # --- Bed and water levels ------------------------------------------------------------------------------------
         'zb',                               # [m] Bed level above reference
+        'dzb',                              # [m/dt] Bed level change per time step (computed after avalanching!)
+        'dzbyear',                          # [m/yr] Bed level change translated to m/y (for dzbavg)
+        'dzbavg',                           # [m/year] Bed level change averaged over collected time steps (for vegetation)
         'zs',                               # [m] Water level above reference
         'zne',                              # [m] Height above reference of the non-erodible layer
-        'zb0',                              # [m] Initial bed level above reference
-        'zdry',                             # [m]
-        'dzdry',                            # [m]
-        'dzb',                              # [m/dt] Bed level change per time step (computed after avalanching!)
-        'dzbyear',                          # [m/yr] Bed level change translated to m/y
-        'dzbavg',                           # [m/year] Bed level change averaged over collected time steps
-        'S',                                # [-] Level of saturation
+        'zb0',                              # [m] Initial bed level above reference (used for wet_bed_reset process)
+        'zsep',                             # [m] Z level of polynomial that defines the separation bubble
+        'hsep',                             # [m] Height of separation bubble = difference between z-level of zsep and of the bed level zb
+        # 'zdry',                           # REMOVE? [m] 
+        # 'dzdry',                          # REMOVE? [m]
+
+        # --- Shear stress and velocity (needed? Also in INITIAL_STATE) -----------------------------------------------
+        'ustar',                            # [m/s] Shear velocity by wind
+        'ustars',                           # [m/s] Component of shear velocity in x-direction by wind
+        'ustarn',                           # [m/s] Component of shear velocity in y-direction by wind
+        'ustar0',                           # [m/s] Initial shear velocity (without perturbation)
+
+        # --- Moisture and groundwater --------------------------------------------------------------------------------
         'moist',                            # [-] Moisture content (volumetric)
         'moist_swr',                        # [-] Moisture content soil water retention relationship (volumetric)
         'h_delta',                          # [-] Suction at reversal between wetting/drying conditions
@@ -101,13 +123,16 @@ MODEL_STATE = {
         'd_h',                              # [-] Moisture content (volumetric) computed on the main drying curve
         'w_hdelta',                         # [-] Moisture content (volumetric) computed on the main wetting curve for hdelta
         'd_hdelta',                         # [-] Moisture content (volumetric) computed on the main drying curve for hdelta
-        'ustar',                            # [m/s] Shear velocity by wind
-        'ustars',                           # [m/s] Component of shear velocity in x-direction by wind
-        'ustarn',                           # [m/s] Component of shear velocity in y-direction by wind
-        'ustar0',                           # [m/s] Initial shear velocity (without perturbation)
-        'zsep',                             # [m] Z level of polynomial that defines the separation bubble
-        'hsep',                             # [m] Height of separation bubble = difference between z-level of zsep and of the bed level zb
-        'theta_dyn',                        # [degrees] spatially varying dynamic angle of repose for avalanching
+
+        # --- Wave and water level variables --------------------------------------------------------------------------
+        'R',                                # [m] wave runup
+        'eta',                              # [m] wave setup
+        'sigma_s',                          # [m] swash
+        'TWL',                              # [m] Total Water Level above reference (SWL + Run-up)
+        'SWL',                              # [m] Still Water Level above reference
+        'DSWL',                             # [m] Dynamic Still water level above reference (SWL + Set-up)
+
+        # --- Vegetation variables (vegetation.py) --------------------------------------------------------------------
         # 'rhoveg',                         # [-] Vegetation cover (now defined via grass module; overlapping name)
         # 'hveg',                           # [m] height of vegetatiion (now defined via grass module; overlapping name)
         'drhoveg',                          # Change in vegetation cover
@@ -117,69 +142,88 @@ MODEL_STATE = {
         'lateral',                          # [bool] Newly vegetated due to lateral propagation 
         'vegetated',                        # [bool] Vegetated, determines if vegetation growth or burial is allowed
         'vegfac',                           # Vegetation factor to modify shear stress by according to Raupach 1993
+
+        # --- Vegetation variables (new: grass.py) --------------------------------------------------------------------
         'Rveg',                             # [-] NEW Vegetation shear reduction factor including Okin effect 
         'R0veg',                            # [-] NEW Local vegetation shear reduction factor (replaces vegfac)
-        'fence_height',                     # Fence height
-        'R',                                # [m] wave runup
-        'eta',                              # [m] wave setup
-        'sigma_s',                          # [m] swash
-        'TWL',                              # [m] Total Water Level above reference (SWL + Run-up)
-        'SWL',                              # [m] Still Water Level above reference
-        'DSWL',                             # [m] Dynamic Still water level above reference (SWL + Set-up)
-        'Rti',                              # [-] Factor taking into account sheltering by roughness elements
 
-        'zeta',                             # [-] [NEW] Bed interaction parameter for in advection equation
-        'kzeta',                            # [-] [NEW] Shape k-parameter in Weibull function for zeta
-        'lamzeta',                          # [m] [NEW] Scale lambda-parameter in Weibull function for zeta
+        # --- Bed interaction variables (NEW) -------------------------------------------------------------------------
+        'zeta',                             # [-] Bed interaction parameter for in advection equation
+        'kzeta',                            # [-] Shape k-parameter in Weibull function for zeta
+        'Lzeta',                            # [m] Vertical lift of transport layer due to vegetation and flow separation
+
+        # --- Other ---------------------------------------------------------------------------------------------------
+        'fence_height',                     # [m] Fence height
+        'theta_dyn',                        # [degrees] spatially varying dynamic angle of repose for avalanching
+        'Rti',                              # [-] Factor taking into account sheltering by roughness elements
+        'S',                                # [-] Level of saturation of sediment transport
+
     ),
+
+    # --- Sediment transport variables (multiple fractions) -----------------------------------------------------------
     ('ny','nx','nfractions') : (
+
+        # --- Sediment transport variables ----------------------------------------------------------------------------
         'Cu',                               # [kg/m^2] Equilibrium sediment concentration integrated over saltation height
         'Cuf',                              # [kg/m^2] Equilibrium sediment concentration integrated over saltation height, assuming the fluid shear velocity threshold
         'Cu0',                              # [kg/m^2] Flat bad equilibrium sediment concentration integrated over saltation height
         'CuAir',                            # [kg/m^2] Equilibrium sediment concentration for airborne sediment
-        'CuBed',                           # [kg/m^2] [NEW] Equilibrium sediment concentration for bed sediment
+        'CuBed',                            # [kg/m^2] Equilibrium sediment concentration for bed sediment
         'Ct',                               # [kg/m^2] Instantaneous sediment concentration integrated over saltation height
+
+        # --- Sediment flux and pickup variables ----------------------------------------------------------------------
         'q',                                # [kg/m/s] Instantaneous sediment flux
         'qs',                               # [kg/m/s] Instantaneous sediment flux in x-direction
         'qn',                               # [kg/m/s] Instantaneous sediment flux in y-direction
         'pickup',                           # [kg/m^2] Sediment entrainment
+        'masstop',                          # [kg/m^2] Sediment mass in bed toplayer, only stored for output
+
+        # --- Sediment bed composition variables ----------------------------------------------------------------------
         'w',                                # [-] Weights of sediment fractions
         'w_init',                           # [-] Initial guess for ``w''
         'w_air',                            # [-] Weights of sediment fractions based on grain size distribution in the air
         'w_bed',                            # [-] Weights of sediment fractions based on grain size distribution in the bed
+
+        # --- Velocity threshold (uth) and sediment velocity (u) variables --------------------------------------------
         'uth',                              # [m/s] Shear velocity threshold
         'uthf',                             # [m/s] Fluid shear velocity threshold
         'uth0',                             # [m/s] Shear velocity threshold based on grainsize only (aerodynamic entrainment)
         'u',                                # [m/s] Mean horizontal saltation velocity in saturated state
+        'u0',                               # [m/s] Mean horizontal saltation velocity in saturated state over flat bed
         'us',                               # [m/s] Component of the saltation velocity in x-direction
         'un',                               # [m/s] Component of the saltation velocity in y-direction
         'usST',                            # [NEW] [m/s] Component of the saltation velocity in x-direction for SedTRAILS
         'unST',                            # [NEW] [m/s] Component of the saltation velocity in y-direction for SedTRAILS
-        'u0',
-        'masstop',                          # [kg/m^2] Sediment mass in bed toplayer, only stored for output
     ),
+
+    # --- Layer variables for bed composition -------------------------------------------------------------------------
     ('ny','nx','nlayers') : (
         'thlyr',                            # [m] Bed composition layer thickness
-        'salt',                             # [-] Salt content
+        'salt',                             # [-] REMOVE? Salt content
     ),
+
+    # --- Sediment bed mass variable ----------------------------------------------------------------------------------
     ('ny','nx','nlayers','nfractions') : (
         'mass',                             # [kg/m^2] Sediment mass in bed
     ),
 
-    # Vegetation variables for grass model (original grid)
+    # --- Vegetation variables for grass model (multiple species, main computational grid) ----------------------------
     ('ny','nx','nspecies') : (
         'Nt',                              # [1/m^2] Density of grass tillers
         'hveg',                            # [m] Average height of the grass tillers
         'hveg_eff',                        # [m] Effective vegetation height
         'lamveg',                          # [-] Frontal area density
         'rhoveg',                          # [-] Cover area density
+        'fbend',                           # [-] Bending factor
     ),
 
-    # Vegetation variables for grass model (refined vegetation grid)
+    # --- Vegetation variables for grass model (refined vegetation grid) ----------------------------------------------
     ('ny_vsub','nx_vsub') : (
         'x_vsub',                           # [m] x-coordinates of vegetation subgrid
         'y_vsub',                           # [m] y-coordinates of vegetation subgrid
     ),
+
+    # --- Vegetation variables for grass model (refined vegetation grid, multiple species) ----------------------------
     ('ny_vsub','nx_vsub','nspecies') : (
         'Nt_vsub',                          # [1/m^2] Density of tillers
         'hveg_vsub',                        # [m] Height of individual tillers
@@ -417,9 +461,10 @@ DEFAULT_CONFIG = {
     # --- Bed interaction in advection equation (new process) ---------------------------------------------------------
     'zeta_base'                     : 1.0,                # [-] Base value for bed interaction parameter in advection equation 
     'p_zeta_moist'                  : 0.8,                # [-] Exponent parameter for computing zeta from moisture
-    'a_weibull'                     : 2.,                 # [-] Shape parameter k of Weibull function for bed interaction parameter zeta
-    'b_weibull'                     : 2.,                 # [m] Scale parameter lambda of Weibull function for bed interaction parameter zeta
+    'a_weibull'                     : 1.0,                # [-] Shape parameter k of Weibull function for bed interaction parameter zeta
+    'b_weibull'                     : 0.5,                # [m] Scale parameter lambda of Weibull function for bed interaction parameter zeta
     'bounce'                        : [0.5],              # [-] Fraction of sediment skimming over vegetation canopy (species-specific)
+    'alpha_lift'                    : 1.0,                # [-] Vegetation-induced upward lift (0-1) of transport-layer centroid
 
     # --- Grass vegetation model (new vegetation framework) -----------------------------------------------------------
     'method_vegetation'             : 'duran',       # ['duran' | 'grass'] Vegetation formulation
