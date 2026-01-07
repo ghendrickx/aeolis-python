@@ -67,6 +67,7 @@ import aeolis.vegetation
 import aeolis.grass
 import aeolis.fences
 import aeolis.gridparams
+import aeolis.zeta
 
 from aeolis.advection import (
     solve,
@@ -298,7 +299,7 @@ class AeoLiS(IBmi):
         # initialize wind model
         self.s = aeolis.wind.initialize(self.s, self.p)
          
-        #initialize vegetation model
+        # initialize vegetation model
         if self.p['method_vegetation'] == 'duran':
             self.s = aeolis.vegetation.initialize(self.s, self.p)
         elif self.p['method_vegetation'] == 'grass':
@@ -306,8 +307,12 @@ class AeoLiS(IBmi):
         else:
             logger.log_and_raise('Unknown vegetation method [%s]' % self.p['method_vegetation'], exc=ValueError)                
 
-        #initialize fence model
+        # initialize fence model
         self.s = aeolis.fences.initialize(self.s, self.p)
+
+        # initilize bed-interaction parameter zeta
+        if self.p['process_bedinteraction']:
+            self.s = aeolis.zeta.initialize(self.s, self.p)
 
         # Create interpretation information
         if self.p['visualization']:
@@ -388,6 +393,10 @@ class AeoLiS(IBmi):
 
         # compute saltation velocity and equilibrium transport
         self.s = aeolis.transport.equilibrium(self.s, self.p)
+
+        # compute bed-interaction parameter zeta
+        if self.p['process_bedinteraction']:
+            self.s = aeolis.zeta.compute_zeta(self.s, self.p)
 
         # compute instantaneous transport
         if self.p['scheme'] == 'euler_forward':
@@ -981,6 +990,59 @@ class AeoLiSRunner(AeoLiS):
             logger.log_and_raise('Configuration file not found [%s]' % self.configfile, exc=IOError)
 
 
+    def init_logger(self):
+        """
+        Initialize file and console logging for AeoLiS.
+
+        This method is safe to call once before initialize()
+        and is reused by run().
+        """
+
+        # IMPORTANT: this is the module-level logger used everywhere
+        logger = logging.getLogger(__name__)
+
+        # Clear existing handlers (interactive / repeated runs)
+        if logger.hasHandlers():
+            logger.handlers.clear()
+
+        logger.setLevel(logging.DEBUG)
+
+        # ---- file logger ----
+        logfile = '%s.log' % os.path.splitext(self.configfile)[0]
+        filehandler = logging.FileHandler(logfile, mode='w')
+        filehandler.setLevel(logging.INFO)
+        filehandler.setFormatter(
+            logging.Formatter(
+                '%(asctime)-15s %(name)-8s %(levelname)-8s %(message)s'
+            )
+        )
+        logger.addHandler(filehandler)
+
+        # ---- console logger ----
+        streamhandler = logging.StreamHandler()
+        streamhandler.setLevel(logging.INFO)
+        streamhandler.setFormatter(StreamFormatter())
+        logger.addHandler(streamhandler)
+
+        # Ensure submodule loggers propagate here
+        logger.propagate = True
+
+        logger.info('**********************************************************')
+        logger.info('                                                          ')
+        logger.info('         d8888                   888      d8b  .d8888b.   ')
+        logger.info('        d88888                   888      Y8P d88P  Y88b  ')
+        logger.info('       d88P888                   888          Y88b.       ')
+        logger.info('      d88P 888  .d88b.   .d88b.  888      888  "Y888b.    ')
+        logger.info('     d88P  888 d8P  Y8b d88""88b 888      888     "Y88b.  ')
+        logger.info('    d88P   888 88888888 888  888 888      888       "888  ')
+        logger.info('   d8888888888 Y8b.     Y88..88P 888      888 Y88b  d88P  ')
+        logger.info('  d88P     888  "Y8888   "Y88P"  88888888 888  "Y8888P"   ')
+        logger.info('                                                          ')
+        logger.info('  Version:  %-45s', __version__)
+        logger.info('                                                          ')
+        logger.info('**********************************************************\n')
+
+
     def run(self, callback=None, restartfile:str=None) -> None:
         '''Start model time loop
 
@@ -1008,40 +1070,7 @@ class AeoLiSRunner(AeoLiS):
 
         '''
 
-        # http://www.patorjk.com/software/taag/
-        # font: Colossal
-
-        if (logger.hasHandlers()):
-            logger.handlers.clear()
-        logger.setLevel(logging.DEBUG)
-
-        # initialize file logger
-        filehandler = logging.FileHandler('%s.log' % os.path.splitext(self.configfile)[0], mode='w')
-        filehandler.setLevel(logging.INFO)
-        filehandler.setFormatter(logging.Formatter('%(asctime)-15s %(name)-8s %(levelname)-8s %(message)s'))
-        logger.addHandler(filehandler)
-
-        # initialize console logger
-        streamhandler = logging.StreamHandler()
-        streamhandler.setLevel(20)
-        streamhandler.setFormatter(StreamFormatter())
-        logger.addHandler(streamhandler)
-
-
-        logger.info('**********************************************************')
-        logger.info('                                                          ')
-        logger.info('         d8888                   888      d8b  .d8888b.   ')
-        logger.info('        d88888                   888      Y8P d88P  Y88b  ')
-        logger.info('       d88P888                   888          Y88b.       ')
-        logger.info('      d88P 888  .d88b.   .d88b.  888      888  "Y888b.    ')
-        logger.info('     d88P  888 d8P  Y8b d88""88b 888      888     "Y88b.  ')
-        logger.info('    d88P   888 88888888 888  888 888      888       "888  ')
-        logger.info('   d8888888888 Y8b.     Y88..88P 888      888 Y88b  d88P  ')
-        logger.info('  d88P     888  "Y8888   "Y88P"  88888888 888  "Y8888P"   ')
-        logger.info('                                                          ')
-        logger.info('  Version:  %-45s' % __version__)
-        # logger.info('  Git hash: %-45s' % __gitversion__) # commenting for now until we implement pyproject.toml
-        logger.info('                                                          ')
+        self.init_logger()
 
         # set working directory
         fpath, fname = os.path.split(self.configfile)
@@ -1212,6 +1241,8 @@ class AeoLiSRunner(AeoLiS):
 
         super(AeoLiSRunner, self).initialize()
         self.output_init()
+
+        self.clear = True
 
     def update(self, dt:float=-1) -> None:
         '''Time stepping function

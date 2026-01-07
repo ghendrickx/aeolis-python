@@ -93,7 +93,7 @@ MODEL_STATE = {
         'zb',                               # [m] Bed level above reference
         'dzb',                              # [m/dt] Bed level change per time step (computed after avalanching!)
         'dzbyear',                          # [m/yr] Bed level change translated to m/y (for dzbavg)
-        'dzbavg',                           # [m/year] Bed level change averaged over collected time steps (for vegetation)
+        'dzbavg',                           # [m/yr] Bed level change averaged over collected time steps (for vegetation)
         'zs',                               # [m] Water level above reference
         'zne',                              # [m] Height above reference of the non-erodible layer
         'zb0',                              # [m] Initial bed level above reference (used for wet_bed_reset process)
@@ -157,7 +157,6 @@ MODEL_STATE = {
         'theta_dyn',                        # [degrees] spatially varying dynamic angle of repose for avalanching
         'Rti',                              # [-] Factor taking into account sheltering by roughness elements
         'S',                                # [-] Level of saturation of sediment transport
-
     ),
 
     # --- Sediment transport variables (multiple fractions) -----------------------------------------------------------
@@ -211,7 +210,7 @@ MODEL_STATE = {
     ('ny','nx','nspecies') : (
         'Nt',                              # [1/m^2] Density of grass tillers
         'hveg',                            # [m] Average height of the grass tillers
-        'hveg_eff',                        # [m] Effective vegetation height
+        'hvegeff',                        # [m] Effective vegetation height
         'lamveg',                          # [-] Frontal area density
         'rhoveg',                          # [-] Cover area density
         'fbend',                           # [-] Bending factor
@@ -460,11 +459,12 @@ DEFAULT_CONFIG = {
 
     # --- Bed interaction in advection equation (new process) ---------------------------------------------------------
     'zeta_base'                     : 1.0,                # [-] Base value for bed interaction parameter in advection equation 
+    'zeta_sheltering'               : False,              # [-] Include sheltering effect of roughness elements on bed interaction parameter
     'p_zeta_moist'                  : 0.8,                # [-] Exponent parameter for computing zeta from moisture
     'a_weibull'                     : 1.0,                # [-] Shape parameter k of Weibull function for bed interaction parameter zeta
     'b_weibull'                     : 0.5,                # [m] Scale parameter lambda of Weibull function for bed interaction parameter zeta
-    'bounce'                        : [0.5],              # [-] Fraction of sediment skimming over vegetation canopy (species-specific)
-    'alpha_lift'                    : 1.0,                # [-] Vegetation-induced upward lift (0-1) of transport-layer centroid
+    'bounce'                        : [0.75],              # [-] Fraction of sediment skimming over vegetation canopy (species-specific)
+    'alpha_lift'                    : 0.2,                # [-] Vegetation-induced upward lift (0-1) of transport-layer centroid
 
     # --- Grass vegetation model (new vegetation framework) -----------------------------------------------------------
     'method_vegetation'             : 'duran',       # ['duran' | 'grass'] Vegetation formulation
@@ -506,9 +506,16 @@ DEFAULT_CONFIG = {
     'm_veg'                         : [0.4],         # [-] Shear non-uniformity correction factor
     'c1_okin'                       : [0.48],        # [-] Downwind decay coefficient in Okin shear reduction
 
+    'veg_sigma'                     : 0.,            # [-] Sigma in gaussian distrubtion of vegetation cover filter
+    'zeta_sigma'                    : 0.,            # [-] Standard deviation for smoothing vegetation bed interaction parameter
+
     'alpha_comp'                    : [0.],          # [-] Lotka–Volterra competition coefficients
                                                      #      shape: nspecies * nspecies (flattened)
                                                      #      alpha_comp[k,l] = effect of species l on species k
+                                    
+    'T_flood'                       : 7200.,         # [s] Time scale for vegetation flood stress mortality (half-life under constant inundation)
+    'gamma_Nt_decay'                : 0.,            # [-] Sensitivity of tiller density decay to relative reduction in hveg
+
 
     # --- Separation bubble parameters --------------------------------------------------------------------------------
     'sep_look_dist'                 : 50.,           # [m] Flow separation: Look-ahead distance for upward curvature anticipation

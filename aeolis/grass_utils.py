@@ -116,6 +116,49 @@ def expand_to_subgrid(A, f):
     return np.repeat(np.repeat(A, f, axis=0), f, axis=1)
 
 
+@njit
+def expand_to_subgrid_linear(A, f):
+    """
+    Expand (ny, nx, nspecies) → (ny*f, nx*f, nspecies)
+    using fast bilinear interpolation on a uniform (possibly rotated) grid.
+    """
+
+    ny, nx, ns = A.shape
+    nyf = ny * f
+    nxf = nx * f
+
+    Aout = np.empty((nyf, nxf, ns))
+
+    # Precompute subcell weights
+    w = np.empty(f)
+    for i in range(f):
+        w[i] = (i + 0.5) / f
+
+    for iy in range(ny - 1):
+        for ix in range(nx - 1):
+
+            v00 = A[iy,     ix    ]
+            v10 = A[iy,     ix + 1]
+            v01 = A[iy + 1, ix    ]
+            v11 = A[iy + 1, ix + 1]
+
+            for jy in range(f):
+                wy = w[jy]
+                iyf = iy * f + jy
+
+                for jx in range(f):
+                    wx = w[jx]
+                    ixf = ix * f + jx
+
+                    for k in range(ns):
+                        Aout[iyf, ixf, k] = (
+                            (1.0 - wy) * ((1.0 - wx) * v00[k] + wx * v10[k]) +
+                            wy         * ((1.0 - wx) * v01[k] + wx * v11[k])
+                        )
+
+    return Aout
+
+
 def aggregate_from_subgrid(A, f):
     """Aggregate (ny*f, nx*f, nspecies) → (ny, nx, nspecies) by averaging."""
     nyf, nxf, ns = A.shape

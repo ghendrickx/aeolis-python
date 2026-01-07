@@ -960,54 +960,70 @@ def solve_SS(self, alpha:float=0., beta:float=1.) -> dict:
         
     nf = p['nfractions']
         
-    
-    for i in range(nf):
+    # LOOPING HAPPENS IN SWEEP FUNCTION NOW (RIGHT?)
+    # for i in range(nf):
         
 
-        if 1:
-            #print('sweep')
+        # FIX: WHY ONLY FIRST FRACTION? 
+        # WHERE ARE THE BOUNDARIES SET?
+        # Just changed 0 to i...
+        # Constant --> Neumann?
 
-            # initiate emmpty solution matrix, this will effectively kill time dependence and create steady state.
-            Ct = np.zeros(Ct.shape)
-            
-            if p['boundary_offshore'] == 'flux':
-                Ct[:,0,0] =  p['offshore_flux'] * s['Cu0'][:,0,0] 
+    # if 1:
+        #print('sweep')
 
-            if p['boundary_onshore'] == 'flux':
-                Ct[:,-1,0] = p['onshore_flux'] *  s['Cu0'][:,-1,0] 
+    # initiate emmpty solution matrix, this will effectively kill time dependence and create steady state.
+    Ct = np.zeros(Ct.shape)
+    
+    # Flux boundary conditions
+    if p['boundary_offshore'] == 'flux':
+        Ct[:,0,:] =  p['offshore_flux'] * s['Cu0'][:,0,:] # s['Cu'][:,0,i]?
+    if p['boundary_onshore'] == 'flux':
+        Ct[:,-1,:] = p['onshore_flux'] *  s['Cu0'][:,-1,:] # s['Cu0']
+    if p['boundary_lateral'] == 'flux':
+        Ct[0,:,:] = p['lateral_flux'] *  s['Cu0'][0,:,:] # s['Cu0']
+        Ct[-1,:,:] = p['lateral_flux'] *  s['Cu0'][-1,:,:] # s['Cu0']
 
-            if p['boundary_offshore'] == 'circular':
-                Ct[:,0,0] =  -1                
-                Ct[:,-1,0] =  -1                  
-            
-            if p['boundary_offshore'] == 're_circular':
-                Ct[:,0,0] =  -2                
-                Ct[:,-1,0] =  -2         
-            
-            if p['boundary_lateral'] == 'circular':
-                Ct[0,:,0] =  -1                
-                Ct[-1,:,0] =  -1
-            
-            if p['boundary_lateral'] == 're_circular':
-                Ct[0,:,0] =  -2                
-                Ct[-1,:,0] =  -2
+    # # Circular and re-circular boundary conditions
+    # if p['boundary_offshore'] == 'circular':
+    #     Ct[:,0,0] =  -1                
+    #     Ct[:,-1,0] =  -1                  
+    # if p['boundary_offshore'] == 're_circular':
+    #     Ct[:,0,0] =  -2                
+    #     Ct[:,-1,0] =  -2         
+    # if p['boundary_lateral'] == 'circular':
+    #     Ct[0,:,0] =  -1                
+    #     Ct[-1,:,0] =  -1
+    # if p['boundary_lateral'] == 're_circular':
+    #     Ct[0,:,0] =  -2                
+    #     Ct[-1,:,0] =  -2
 
-            if p['boundary_lateral'] == 'flux':
-                Ct[0,:,0] = p['lateral_flux'] *  s['Cu0'][0,:,0]
-                Ct[-1,:,0] = p['lateral_flux'] *  s['Cu0'][-1,:,0]
+    # Constant boundary conditions
+    if p['boundary_offshore'] == 'constant':
+        Ct[:,0,:] = Ct[:,1,:]
+    if p['boundary_onshore'] == 'constant':
+        Ct[:,-1,:] = Ct[:,-2,:]
+    if p['boundary_lateral'] == 'constant':
+        Ct[0,:,:] = Ct[1,:,:]
+        Ct[-1,:,:] = Ct[-2,:,:]
 
+    onshore_bc = p['boundary_onshore']
+    offshore_bc = p['boundary_offshore']
+    lateral_bc = p['boundary_lateral']
 
-            Ct, pickup = sweep(Ct, s['CuBed'].copy(), s['CuAir'].copy(), 
-                               s['zeta'].copy(), s['mass'].copy(), 
-                               self.dt, p['T'], 
-                               s['ds'], s['dn'], s['us'], s['un'], w)
+    Cu, Ct, pickup = sweep(Ct, s['CuBed'].copy(), s['CuAir'].copy(), 
+                        s['zeta'].copy(), s['mass'].copy(), 
+                        self.dt, p['T'], 
+                        s['ds'], s['dn'], s['us'], s['un'], w,
+                        onshore_bc, offshore_bc, lateral_bc, s['uws'][0,0], s['uwn'][0,0])
 
     qs = Ct * s['us'] 
     qn = Ct * s['un'] 
     q = np.hypot(qs, qn)
 
 
-    return dict(Ct=Ct,
+    return dict(Cu=Cu,
+                Ct=Ct,
                 qs=qs,
                 qn=qn,
                 pickup=pickup,
@@ -1831,7 +1847,8 @@ def solve_pieter(self, alpha:float=.5, beta:float=1.) -> dict:
 # This function acts as an orchestrator, delegating work to Numba-compiled helper functions.
 # Decorating the orchestrator itself with njit provides no performance benefit,
 # since most of the computation is already handled by optimized Numba functions.
-def sweep(Ct, Cu_bed, Cu_air, zeta, mass, dt, Ts, ds, dn, us, un, w):
+def sweep(Ct, Cu_bed, Cu_air, zeta, mass, dt, Ts, ds, dn, us, un, w, 
+          onshore_bc, offshore_bc, lateral_bc, uws, uwn):
 
     Cu = Cu_bed.copy()
 
@@ -1841,25 +1858,15 @@ def sweep(Ct, Cu_bed, Cu_air, zeta, mass, dt, Ts, ds, dn, us, un, w):
 
     nf = np.shape(Ct)[2]
 
-    # # Are the lateral boundary conditions circular?
-    # circ_lateral = False
-    # if Ct[0,1,0]==-1:
-    #     circ_lateral = True
-    #     Ct[0,:,0] = 0                
-    #     Ct[-1,:,0] = 0
-
-    # circ_offshore = False
-    # if Ct[1,0,0]==-1:
-    #     circ_offshore = True
-    #     Ct[:,0,0] = 0                
-    #     Ct[:,-1,0] = 0
-
-    # recirc_offshore = False
-    # if Ct[1,0,0]==-2:
-    #     recirc_offshore = True
-    #     Ct[:,0,0] = 0                
-    #     Ct[:,-1,0] = 0
-    
+    # Are the lateral boundary conditions circular?
+    # Why are we doing this???
+    if lateral_bc == 'circular':
+        Ct[0,:,:] = 0                
+        Ct[-1,:,:] = 0
+    if onshore_bc == 'circular':
+        Ct[:,-1,:] = 0                
+    if offshore_bc == 'circular':            
+        Ct[:,0,:] = 0
     
     ufs = np.zeros((np.shape(us)[0], np.shape(us)[1]+1, np.shape(us)[2]))
     ufn = np.zeros((np.shape(un)[0]+1, np.shape(un)[1], np.shape(un)[2]))
@@ -1899,25 +1906,55 @@ def sweep(Ct, Cu_bed, Cu_air, zeta, mass, dt, Ts, ds, dn, us, un, w):
 
     Ct_last = Ct.copy()
 
-    while k==0 or np.any(np.abs(Ct[:,:,i]-Ct_last[:,:,i])>1e-10):
-    # while k==0 or np.any(np.abs(Ct[:,:,i]-Ct_last[:,:,i])!=0):
+    while k==0 or np.any(np.abs(Ct[:,:,i]-Ct_last[:,:,i])>1e-8):
         Ct_last = Ct.copy()
 
         # # lateral boundaries circular
-        # if circ_lateral:
-        #     Ct[0,:,0],Ct[-1,:,0] = Ct[-1,:,0].copy(),Ct[0,:,0].copy()
-        #     # pickup[0,:,0],pickup[-1,:,0] = pickup[-1,:,0].copy(),pickup[0,:,0].copy()
-        # if circ_offshore:
-        #     Ct[:,0,0],Ct[:,-1,0] = Ct[:,-1,0].copy(),Ct[:,0,0].copy()
-        #     # pickup[:,0,0],pickup[:,-1,0] = pickup[:,-1,0].copy(),pickup[:,0,0].copy()
+        # if lateral_bc == 'circular':
+        #     Ct[0,:,:],Ct[-1,:,:] = Ct[-1,:,:].copy(),Ct[0,:,:].copy()
+        # if onshore_bc == 'circular':
+        #     Ct[:,-1,:] = Ct[:,0,:].copy()
+        # if offshore_bc == 'circular':
+        #     Ct[:,0,:] = Ct[:,-1,:].copy()
 
-        # if recirc_offshore:
-        #     Ct[:,0,0],Ct[:,-1,0] = np.mean(Ct[:,-2,0]), np.mean(Ct[:,1,0])
+        # only for incoming
+        
 
+        # circular boundaries (CHECK THIS!)
+        if lateral_bc == 'circular' and uwn >= 0:
+            Ct[0,:,:] = Ct[-1,:,:].copy()
+        if lateral_bc == 'circular' and uwn < 0:
+            Ct[-1,:,:] = Ct[0,:,:].copy()
+        if onshore_bc == 'circular' and uws < 0:
+            Ct[:,-1,:] = Ct[:,0,:].copy()
+        if offshore_bc == 'circular' and uws >= 0:
+            Ct[:,0,:] = Ct[:,-1,:].copy()
+
+        # constant boundaries (maybe use Cu here to help?)
+        if lateral_bc == 'constant' and uwn >= 0:
+            Ct[0,:,:] = Ct[1,:,:].copy()
+        if lateral_bc == 'constant' and uwn < 0:
+            Ct[-1,:,:] = Ct[-2,:,:].copy()
+        if onshore_bc == 'constant' and uws < 0:
+            Ct[:,-1,:] = Ct[:,-2,:].copy()
+        if offshore_bc == 'constant' and uws >= 0:
+            Ct[:,0,:] = Ct[:,1,:].copy()
+
+        # flux boundaries (zero influx)
+        if lateral_bc == 'flux' and uwn >= 0:
+            Ct[0,:,:] = 0.
+        if lateral_bc == 'flux' and uwn < 0:
+            Ct[-1,:,:] = 0.
+        if onshore_bc == 'flux' and uws < 0:
+            Ct[:,-1,:] = 0.
+        if offshore_bc == 'flux' and uws >= 0:
+            Ct[:,0,:] = 0.
+
+        # initialize visited matrix and quadrant matrix
         visited = np.zeros(Ct.shape[:2], dtype=np.bool_)
         quad = np.zeros(Ct.shape[:2], dtype=np.uint8)
 
-
+        # solve quadrants
         _solve_quadrant1(Ct, Cu_air, Cu_bed, zeta, mass, pickup,
                           dt, Ts, ds, dn, ufs, ufn, w, visited, quad, nf)
 
@@ -1936,40 +1973,69 @@ def sweep(Ct, Cu_bed, Cu_air, zeta, mass, dt, Ts, ds, dn, us, un, w):
         
         # check the boundaries of the pickup matrix for unvisited cells
         # print(np.shape(visited[0,:]==False))
-        pickup[0,:,0] = pickup[1,:,0].copy() 
-        pickup[-1,:,0] = pickup[-2,:,0].copy() 
+        # WHAT IS THIS????
+        # pickup[0,:,0] = pickup[1,:,0].copy() 
+        # pickup[-1,:,0] = pickup[-2,:,0].copy() 
+
+        # Try trick: Where Ct > 3 * Cu, set Ct = to Cu
+        Ct = prevent_excessive_concentrations(Ct, Cu_air)
 
         omega = 0.99
         Ct[:] = Ct_last + omega*(Ct - Ct_last)
 
         k+=1
 
+        if k > 1000:
+            logger.warning(f'Limit of k, max. difference Ct: {np.max(np.abs(Ct[:,:,i]-Ct_last[:,:,i]))} \n      uws: {uws}, uwn: {uwn}')
+            
+            # fig,ax = plt.subplots(5,1, figsize=(12,6))
+            # im0 = ax[0].imshow(Ct[:,:,0], origin='lower', cmap='viridis', vmin=0)#, vmax=0.05)
+            # ax[0].set_title('Sediment Concentration (Ct)')
+            # fig.colorbar(im0, ax=ax[0], label='Ct')
+            # im1 = ax[1].imshow(zeta, origin='lower', cmap='viridis', vmin=0, vmax=1)
+            # ax[1].set_title('Zeta')
+            # fig.colorbar(im1, ax=ax[1], label='zeta')
+            # im2 = ax[2].imshow(np.abs(Ct[:,:,0]-Ct_last[:,:,0]), origin='lower', cmap='viridis')
+            # ax[2].set_title('Difference in Ct')
+            # fig.colorbar(im2, ax=ax[2], label='|Ct - Ct_last|')
+            # im2 = ax[3].imshow(us[:,:,0], origin='lower', cmap='viridis')
+            # ax[3].quiver(us[:,:,0], un[:,:,0], scale=100, color='white')
+            # ax[3].set_title('us')   
+            # fig.colorbar(im2, ax=ax[3], label='us')
+            # im3 = ax[4].imshow(un[:,:,0], origin='lower', cmap='viridis')
+            # ax[4].set_title('un')
+            # fig.colorbar(im3, ax=ax[4], label='un')
+            # plt.tight_layout()
+            # plt.show()
+
+            break
+
     # print(f"Number of sweeps: {k}")
 
-    # Plotting
-    # import matplotlib.pyplot as plt
-    # plt.figure(figsize=(12, 6))
-    # plt.subplot(1, 2, 1)
-    # plt.title('Sediment Concentration (Ct)')
-    # plt.imshow(Ct[:,:,0], origin='lower', cmap='viridis', vmin=0, vmax=0.05)
-    # plt.colorbar(label='Ct')
-    # plt.subplot(1, 2, 2)
-    # plt.title('zeta')
-    # plt.imshow(zeta, origin='lower', cmap='viridis')
-    # plt.colorbar(label='zeta')
-    # plt.tight_layout()
-    # plt.show()
 
+
+    # Store Cu for output
     
-    return Ct, pickup
+    # Prevent division by zero
+    Cu_air_safe = Cu_air.copy()
+    Cu_air_safe[Cu_air_safe == 0] = 1e-10
+    for f in range(nf):
+        w_zeta_air = (1 - zeta) * Ct[:, :, f] / Cu_air_safe[:, :, f]
+        w_zeta_bed = 1 - w_zeta_air
+        Cu[:, :, f] = w_zeta_air * Cu_air[:, :, f] + w_zeta_bed * Cu_bed[:, :, f]
+    
+    return Cu, Ct, pickup
 
 
 @njit(cache=True)
 def _solve_quadrant1(Ct, Cu_air, Cu_bed, zeta, mass, pickup,
                      dt, Ts, ds, dn, ufs, ufn, w, visited, quad, nf):
 
-    for n in range(1, Ct.shape[0]):
-        for s in range(1, Ct.shape[1]):
+    n0 = 1 # 1
+    s0 = 1 # 1
+
+    for n in range(n0, Ct.shape[0]):
+        for s in range(s0, Ct.shape[1]):
 
             if ((not visited[n, s]) and
                 (ufn[n,s,0] >= 0) and (ufs[n,s,0] >= 0) and
@@ -2022,8 +2088,11 @@ def _solve_quadrant1(Ct, Cu_air, Cu_bed, zeta, mass, pickup,
 def _solve_quadrant2(Ct, Cu_air, Cu_bed, zeta, mass, pickup,
                      dt, Ts, ds, dn, ufs, ufn, w, visited, quad, nf):
 
-    for n in range(1, Ct.shape[0]):
-        for s in range(Ct.shape[1]-2, -1, -1):
+    n0 = 1 # 1
+    s1 = Ct.shape[1]-2 # Ct.shape[1]-2
+
+    for n in range(n0, Ct.shape[0]):
+        for s in range(s1, -1, -1):
 
             if ((not visited[n,s]) and
                 (ufn[n,s,0] >= 0) and (ufs[n,s,0] <= 0) and
@@ -2073,8 +2142,11 @@ def _solve_quadrant2(Ct, Cu_air, Cu_bed, zeta, mass, pickup,
 def _solve_quadrant3(Ct, Cu_air, Cu_bed, zeta, mass, pickup,
                      dt, Ts, ds, dn, ufs, ufn, w, visited, quad, nf):
 
-    for n in range(Ct.shape[0]-2, -1, -1):
-        for s in range(Ct.shape[1]-2, -1, -1):
+    n1 = Ct.shape[0]-2 # Ct.shape[0]-2
+    s1 = Ct.shape[1]-2 # Ct.shape[1]-2
+
+    for n in range(n1, -1, -1):
+        for s in range(s1, -1, -1):
 
             if ((not visited[n,s]) and
                 (ufn[n,s,0] <= 0) and (ufs[n,s,0] <= 0) and
@@ -2124,8 +2196,11 @@ def _solve_quadrant3(Ct, Cu_air, Cu_bed, zeta, mass, pickup,
 def _solve_quadrant4(Ct, Cu_air, Cu_bed, zeta, mass, pickup,
                      dt, Ts, ds, dn, ufs, ufn, w, visited, quad, nf):
 
-    for n in range(Ct.shape[0]-2, -1, -1):
-        for s in range(1, Ct.shape[1]):
+    n1 = Ct.shape[0]-2 # Ct.shape[0]-2
+    s0 = 1 # 1
+
+    for n in range(n1, -1, -1):
+        for s in range(s0, Ct.shape[1]):
 
             if ((not visited[n,s]) and
                 (ufn[n,s,0] <= 0) and (ufs[n,s,0] >= 0) and
@@ -2253,3 +2328,30 @@ def _solve_generic_stencil(Ct, Cu_air, Cu_bed, zeta, mass, pickup,
                 quad[n,s] = 5
 
 
+@njit(cache=True)
+def prevent_excessive_concentrations(Ct, Cu):
+    Nx, Ny, Nf = Ct.shape
+    for n in range(Nx):
+        for s in range(Ny):
+            for f in range(Nf):
+                if Cu[n,s,f] > 0:
+                    if Ct[n,s,f] > 10 * Cu[n,s,f]:
+                        Ct[n,s,f] = 0.5 * Cu[n,s,f]
+                        # Ct[n,s,f] -= (Ct[n,s,f] - Cu[n,s,f]) * 0.9
+                        # Ct[n,s,f] *= 0.5
+                        # # set to average of neighbors
+                        # total = 0.0
+                        # count = 0
+                        # # check neighbors
+                        # for dn in [-1, 0, 1]:
+                        #     for ds in [-1, 0, 1]:
+                        #         if (dn == 0 and ds == 0):
+                        #             continue
+                        #         nn = n + dn
+                        #         ss = s + ds
+                        #         if (0 <= nn < Nx) and (0 <= ss < Ny):
+                        #             total += Ct[nn, ss, f]
+                        #             count += 1
+                        # if count > 0:
+                        #     Ct[n,s,f] = total / count
+    return Ct

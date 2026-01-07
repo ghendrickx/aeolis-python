@@ -67,9 +67,13 @@ def duran_grainspeed(s, p):
     ny = p['ny']
     
     # Shear velocity and threshold
-    ustar = s['ustar']
-    ustars = s['ustars']
-    ustarn = s['ustarn']
+    # ustar = s['ustar']
+    # ustars = s['ustars']
+    # ustarn = s['ustarn']
+    # ustar0 = s['ustar0']
+    ustar = s['ustarAir']
+    ustars = s['ustarsAir']
+    ustarn = s['ustarnAir']
     ustar0 = s['ustar0']
     uth = s['uth0'] # uth0 or uth???
     uth0 = s['uth0'] 

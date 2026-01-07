@@ -74,7 +74,7 @@ def initialize(s, p):
     s['zne'][:,:] = p['ne_file']
 
     #initialize thickness of erodable or dry top layer
-    s['zdry'][:,:] = 0.05
+    # s['zdry'][:,:] = 0.05
     
     # initialize bed layers
     s['thlyr'][:,:,:] = p['layer_thickness']
@@ -224,7 +224,8 @@ def wet_bed_reset(s, p):
         
         Tbedreset = p['dt_opt'] / p['Tbedreset']
         
-        ix = s['TWL'] > (s['zb'])
+        # NEW: Only reset where bed is lower than initial bed level
+        ix = (s['TWL'] > s['zb']) #* (s['zb'] < s['zb0'])
         s['zb'][ix] += (s['zb0'][ix] - s['zb'][ix]) * Tbedreset
             
     return s
