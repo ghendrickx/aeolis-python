@@ -169,12 +169,15 @@ MODEL_STATE = {
         'CuAir',                            # [kg/m^2] Equilibrium sediment concentration for airborne sediment
         'CuBed',                            # [kg/m^2] Equilibrium sediment concentration for bed sediment
         'Ct',                               # [kg/m^2] Instantaneous sediment concentration integrated over saltation height
+        'dCt',                              # [kg/m^2] Change in instantaneous sediment concentration in last iteration
+        'iters',                            # [-] Number of iterations to reach equilibrium in advection solver
 
         # --- Sediment flux and pickup variables ----------------------------------------------------------------------
         'q',                                # [kg/m/s] Instantaneous sediment flux
         'qs',                               # [kg/m/s] Instantaneous sediment flux in x-direction
         'qn',                               # [kg/m/s] Instantaneous sediment flux in y-direction
         'pickup',                           # [kg/m^2] Sediment entrainment
+        'pickup0',                          # [kg/m^2] Sediment entrainment without mass limitation
         'masstop',                          # [kg/m^2] Sediment mass in bed toplayer, only stored for output
 
         # --- Sediment bed composition variables ----------------------------------------------------------------------
@@ -326,22 +329,18 @@ DEFAULT_CONFIG = {
     'CFL'                           : 1.,                 # [-] CFL number to determine time step in explicit scheme
     'accfac'                        : 1.,                 # [-] Numerical acceleration factor
     'max_bedlevel_change'           : 999.,               # [m] Maximum bedlevel change after one timestep. Next timestep dt will be modified (use 999. if not used)
-    'max_error'                     : 1e-6,               # [-] Maximum error at which to quit iterative solution in implicit numerical schemes
+    'max_error'                     : 1e-8,               # [-] Maximum error at which to quit iterative solution in implicit numerical schemes
     'max_iter'                      : 1000,               # [-] Maximum number of iterations at which to quit iterative solution in implicit numerical schemes
-    'scheme'                        : 'euler_backward',   # Name of numerical scheme (euler_forward, euler_backward or crank_nicolson)
-    'solver'                        : 'trunk',             # Name of the solver (trunk, pieter, steadystate,steadystatepieter)
+    'solver'                        : 'steadystate',      # Name of the solver (steadystate, euler_backward, euler_forward)
 
     # --- Boundary conditions -----------------------------------------------------------------------------------------
-    'boundary_lateral'              : 'circular',         # Name of lateral boundary conditions (circular, constant ==noflux)
-    'boundary_offshore'             : 'constant',         # Name of offshore boundary conditions (flux, constant, uniform, gradient)
-    'boundary_onshore'              : 'gradient',         # Name of onshore boundary conditions (flux, constant, uniform, gradient)
+    'boundary_lateral'              : 'flux',             # Name of lateral boundary conditions (circular, flux or constant)
+    'boundary_offshore'             : 'flux',             # Name of offshore boundary conditions (circular, flux or constant)
+    'boundary_onshore'              : 'flux',             # Name of onshore boundary conditions (circular, flux or constant)
 
-    'offshore_flux'                 : 0.,                 # [-] Factor to determine offshore boundary flux as a function of Q0 (= 1 for saturated flux , = 0 for noflux)
-    'constant_offshore_flux'        : 0.,                 # [kg/m/s] Constant input flux at offshore boundary
-    'onshore_flux'                  : 0.,                 # [-] Factor to determine onshore boundary flux as a function of Q0 (= 1 for saturated flux , = 0 for noflux)
-    'constant_onshore_flux'         : 0.,                 # [kg/m/s] Constant input flux at offshore boundary
-    'lateral_flux'                  : 0.,                 # [-] Factor to determine lateral boundary flux as a function of Q0 (= 1 for saturated flux , = 0 for noflux)
-    'sedimentinput'                 : 0.,                 # [-] Constant boundary sediment influx (only used in solve_pieter)
+    'offshore_flux'                 : 1.,                 # [-] Factor to determine offshore boundary flux as a function of Cu (= 1 for saturated, = 0 for noflux)
+    'onshore_flux'                  : 1.,                 # [-] Factor to determine onshore boundary flux as a function of Cu (= 1 for saturated, = 0 for noflux)
+    'lateral_flux'                  : 1.,                 # [-] Factor to determine lateral boundary flux as a function of Cu (= 1 for saturated, = 0 for noflux)
 
     # --- General physical constants and model parameters -------------------------------------------------------------
     'method_roughness'              : 'constant',         # Name of method to compute the roughness height z0, note that here the z0 = k

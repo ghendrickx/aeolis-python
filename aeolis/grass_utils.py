@@ -120,7 +120,7 @@ def expand_to_subgrid(A, f):
 def expand_to_subgrid_linear(A, f):
     """
     Expand (ny, nx, nspecies) → (ny*f, nx*f, nspecies)
-    using fast bilinear interpolation on a uniform (possibly rotated) grid.
+    using bilinear interpolation on a uniform grid.
     """
 
     ny, nx, ns = A.shape
@@ -134,6 +134,7 @@ def expand_to_subgrid_linear(A, f):
     for i in range(f):
         w[i] = (i + 0.5) / f
 
+    # Interior cells (bilinear)
     for iy in range(ny - 1):
         for ix in range(nx - 1):
 
@@ -156,7 +157,34 @@ def expand_to_subgrid_linear(A, f):
                             wy         * ((1.0 - wx) * v01[k] + wx * v11[k])
                         )
 
+    # Last column: linear in y
+    for iy in range(ny - 1):
+        for jy in range(f):
+            iyf = iy * f + jy
+            wy = w[jy]
+            for k in range(ns):
+                Aout[iyf, (nx - 1) * f:, k] = (
+                    (1.0 - wy) * A[iy,     nx - 1, k] +
+                    wy         * A[iy + 1, nx - 1, k]
+                )
+
+    # Last row: linear in x
+    for ix in range(nx - 1):
+        for jx in range(f):
+            ixf = ix * f + jx
+            wx = w[jx]
+            for k in range(ns):
+                Aout[(ny - 1) * f:, ixf, k] = (
+                    (1.0 - wx) * A[ny - 1, ix,     k] +
+                    wx         * A[ny - 1, ix + 1, k]
+                )
+
+    # Bottom-right corner
+    for k in range(ns):
+        Aout[(ny - 1) * f:, (nx - 1) * f:, k] = A[ny - 1, nx - 1, k]
+
     return Aout
+
 
 
 def aggregate_from_subgrid(A, f):
@@ -192,7 +220,9 @@ def smooth_burial(s, p):
     t0, zb0 = s['zb_hist'][0] # Oldest retained bed level
 
     # Burial rate [m/s]
-    return (s['zb'] - zb0) / max(t - t0, 1e-12)
+    dzb_smooth = (s['zb'] - zb0) / max(t - t0, 1e-12)
+    
+    return dzb_smooth
 
 
 @njit

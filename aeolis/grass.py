@@ -80,7 +80,7 @@ def update(s, p):
     dzb_main = gutils.smooth_burial(s, p)
     dzb_vsub = gutils.expand_to_subgrid_linear(dzb_main[:,:,None], p['veg_res_factor'])[:,:,0]
 
-    # --- Expand main-grid state variables to subgrid (for flooding) ---------
+    # # --- Expand main-grid state variables to subgrid (for flooding) ---------
     zb_vsub = gutils.expand_to_subgrid_linear(s['zb'][:,:,None], p['veg_res_factor'])[:,:,0]
     TWL_vsub = gutils.expand_to_subgrid_linear(s['TWL'][:,:,None], p['veg_res_factor'])[:,:,0]
 

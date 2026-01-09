@@ -46,7 +46,6 @@ def compute_zeta(s, p):
         else:
             logger.warning("Zeta sheltering requested but threshold not set.")
 
-
     if p['process_vegetation']: # and p['method_vegetation'] == 'grass':
         s = zeta_from_vegetation(s, p)
 
@@ -54,7 +53,7 @@ def compute_zeta(s, p):
     if p['zeta_sigma'] > 0.0:
         s['zeta'] = ndimage.gaussian_filter(s['zeta'], sigma=p['zeta_sigma'])
     # s['zeta'] = np.clip(s['zeta'], 0.05, 1.0)
-    
+
     return s
 
 

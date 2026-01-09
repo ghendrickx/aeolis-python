@@ -70,12 +70,9 @@ import aeolis.gridparams
 import aeolis.zeta
 
 from aeolis.advection import (
-    solve,
     solve_EF,
     solve_SS,
-    solve_pieter,
-    solve_steadystate,
-    solve_steadystatepieter,
+    solve_EB,
 )
 
 # type hints
@@ -167,12 +164,9 @@ class AeoLiS(IBmi):
     """
 
     # Bind imported functions as methods
-    solve = solve
+    solve_EB = solve_EB
     solve_EF = solve_EF
     solve_SS = solve_SS
-    solve_pieter = solve_pieter
-    solve_steadystate = solve_steadystate
-    solve_steadystatepieter = solve_steadystatepieter
     
     def __init__(self, configfile: str) -> None:
         '''Initialize class
@@ -399,14 +393,15 @@ class AeoLiS(IBmi):
             self.s = aeolis.zeta.compute_zeta(self.s, self.p)
 
         # compute instantaneous transport
-        if self.p['scheme'] == 'euler_forward':
-            self.s.update(self.euler_forward())
-        elif self.p['scheme'] == 'euler_backward':
-            self.s.update(self.euler_backward())
-        elif self.p['scheme'] == 'crank_nicolson':
-            self.s.update(self.crank_nicolson())
+        if self.p['solver'] == 'steadystate': 
+            solve_dict = self.solve_SS()
+        elif self.p['solver'] == 'euler_backward':
+            solve_dict = self.solve_EB()
+        elif self.p['solver'] == 'euler_forward':
+            solve_dict = self.solve_EF()
         else:
-            logger.log_and_raise('Unknown scheme [%s]' % self.p['scheme'], exc=ValueError)
+            logger.log_and_raise('Unknown solver [%s]' % self.p['solver'], exc=ValueError)
+        self.s.update(solve_dict)
 
         # update bed
         self.s = aeolis.bed.update(self.s, self.p)
@@ -716,7 +711,7 @@ class AeoLiS(IBmi):
         else:
             self.dt = self.p['dt']
 
-        if self.p['scheme'] == 'euler_forward':
+        if self.p['solver'] == 'euler_forward':
             if self.p['CFL'] > 0.:
                 dtref = np.max(np.abs(self.s['uws']) / self.s['ds']) + \
                         np.max(np.abs(self.s['uwn']) / self.s['dn'])
@@ -729,9 +724,15 @@ class AeoLiS(IBmi):
                     #return False
            
         if self.p['max_bedlevel_change'] != 999. and np.max(self.s['dzb']) != 0. and self.dt_prev != 0.:
+
+            # limit dt based on pickup rate (if non-limited pickup is larger than available mass in toplayer)
+            # this does not account for individual fractions with small availability!
+            r_pickup = np.sum(self.s['pickup0'], axis=2) / np.sum(self.s['mass'][:,:,0,:], axis=2)
+            dt_pickup = self.dt_prev * 0.7 / np.max(r_pickup) # 0.7 factor to be conservative
             
+            # limit dt based pickup rate to max_bedlevel_change
             dt_zb = self.dt_prev * self.p['max_bedlevel_change'] / np.max(self.s['dzb'])
-            self.dt = np.minimum(self.dt, dt_zb)
+            self.dt = np.min([self.dt, dt_zb, dt_pickup])
             
         self.p['dt_opt'] = self.dt
 

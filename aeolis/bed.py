@@ -125,7 +125,18 @@ def initialize(s, p):
     # initialize threshold
     if p['threshold_file'] is not None:
         s['uth'] = p['threshold_file'][:,:,np.newaxis].repeat(nf, axis=-1)
-        
+
+    # adjust max_bedlevel_change to layer thickness
+    # filter out fractions that are => 0.01 m in diameter 
+    # (assumed non-erodible, assumed not included for transport but as roughness element for sheltering)
+    norm_grain_dist = normalize(p['grain_dist'])
+    layer_availability = np.min(norm_grain_dist[(p['grain_size'] < 0.01)]) * p['layer_thickness']
+    if p['max_bedlevel_change'] > layer_availability:
+        logger.warning(f'WARNING: Adjusting timesteps accommodate enough sand in the top layer. \
+                       \n Try to avoid this by increasing your layer thickness! Further timestep reduction will be based on pickup rates. \
+                       \n This does not account for individual fractions with small availability (user responsibility!)')
+        p['max_bedlevel_change'] = layer_availability
+
     return s
 
 

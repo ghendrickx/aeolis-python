@@ -421,18 +421,18 @@ def non_erodible(s,p):
     s['zne'][:,:] = p['ne_file'] 
 
     # Determine where ne-layer is "exposed"
-    thuthlyr = 0.25
+    thuthlyr = 0.01
     ix = (s['zb'] <= s['zne'] + thuthlyr)
     
-    # Smooth method
-    dzne = np.maximum( ( s['zne'] + thuthlyr - s['zb']) / thuthlyr, 0. )
-    for i in range(nf):
-        duth = np.maximum( 2.* s['ustar'] - s['uth'][:,:,i], 0)
-        s['uth'][ix,i] += duth[ix] * dzne[ix]
-    
-    # # Hard method
+    # # Smooth method
+    # dzne = np.maximum( ( s['zne'] + thuthlyr - s['zb']) / thuthlyr, 0. )
     # for i in range(nf):
-    #     s['uth'][ix,i] = np.inf   
+    #     duth = np.maximum( 2.* s['ustar'] - s['uth'][:,:,i], 0)
+    #     s['uth'][ix,i] += duth[ix] * dzne[ix]
+    
+    # Hard method
+    for i in range(nf):
+        s['uth'][ix,i] = np.inf   
 
     return s    
 

@@ -729,8 +729,11 @@ class WindShear:
         dx = x[0,1] - x[0,0]
         dy = y[0,1] - y[0,0]
 
-        angle = np.rad2deg(np.arctan(dy/dx))
-        
+        if dx == 0:
+            angle = 90.
+        else:
+            angle = np.rad2deg(np.arctan(dy/dx))
+
         if dx <= 0 and dy<=0:
             angle += 180.
             
