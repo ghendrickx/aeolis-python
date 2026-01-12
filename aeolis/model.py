@@ -725,14 +725,17 @@ class AeoLiS(IBmi):
            
         if self.p['max_bedlevel_change'] != 999. and np.max(self.s['dzb']) != 0. and self.dt_prev != 0.:
 
-            # limit dt based on pickup rate (if non-limited pickup is larger than available mass in toplayer)
-            # this does not account for individual fractions with small availability!
-            r_pickup = np.sum(self.s['pickup0'], axis=2) / np.sum(self.s['mass'][:,:,0,:], axis=2)
-            dt_pickup = self.dt_prev * 0.7 / np.max(r_pickup) # 0.7 factor to be conservative
+            # # limit dt based on pickup rate (if non-limited pickup is larger than available mass in toplayer)
+            # # this does not account for individual fractions with small availability!
+            # mass_layer = np.sum(self.s['mass'][:,:,0,:], axis=2)
+            # ix_zero = mass_layer == 0.
+            # r_pickup = np.ones_like(mass_layer)
+            # r_pickup[~ix_zero] = self.s['pickup'][:,:,0][~ix_zero] / mass_layer[~ix_zero]
+            # dt_pickup = self.dt_prev * 0.7 / np.max(r_pickup) # 0.7 factor to be conservative
             
             # limit dt based pickup rate to max_bedlevel_change
             dt_zb = self.dt_prev * self.p['max_bedlevel_change'] / np.max(self.s['dzb'])
-            self.dt = np.min([self.dt, dt_zb, dt_pickup])
+            self.dt = np.min([self.dt, dt_zb])#, dt_pickup])
             
         self.p['dt_opt'] = self.dt
 

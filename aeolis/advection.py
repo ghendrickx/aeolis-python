@@ -701,111 +701,90 @@ def sweep(Ct, Cu_bed, Cu_air, zeta, mass, dt, Ts, ds, dn, us, un, w,
           offshore_flux, onshore_flux, lateral_flux,
           uws, uwn, max_iter, max_error, bi):
 
-    # Initialize Cu as a copy of Cu_bed
-    Cu = Cu_bed.copy()
+    # --- ghosted working copies (internal) ---
+    (Ct_g, Cu_air_g, Cu_bed_g, zeta_g, mass_g,
+    ds_g, dn_g, us_g, un_g, w_g) = [_ghostify(a, offshore_bc, onshore_bc, lateral_bc)
+        for a in (Ct, Cu_air, Cu_bed, zeta, mass, ds, dn, us, un, w)]
 
-    # Initialize arrays and variables
-    pickup = np.zeros(Cu.shape)
-    pickup0 = np.zeros(Cu.shape)
-    nf = np.shape(Ct)[2]
+    # initialize Cu on ghosted grid
+    Cu_g = Cu_bed_g.copy()
+    pickup_g  = np.zeros_like(Cu_g)
+    pickup0_g = np.zeros_like(Cu_g)
+
+    nf = np.shape(Ct_g)[2]
     k=0
 
-    # # If circular, also mirror the velocities at the boundaries
-    # if uws >= 0 and offshore_bc == 'circular':
-    #         us[:,0,:] = us[:,-1,:].copy()
-    #         un[:,0,:] = un[:,-1,:].copy()
-    # if uws < 0 and onshore_bc == 'circular':
-    #         us[:,-1,:] = us[:,0,:].copy()
-    #         un[:,-1,:] = un[:,0,:].copy()
-    # if uwn >= 0 and lateral_bc == 'circular':
-    #         us[0,:,:] = us[-1,:,:].copy()
-    #         un[0,:,:] = un[-1,:,:].copy()
-    # if uwn < 0 and lateral_bc == 'circular':
-    #         us[-1,:,:] = us[0,:,:].copy()
-    #         un[-1,:,:] = un[0,:,:].copy()
-
     # define face velocities
-    ufs = np.zeros((np.shape(us)[0], np.shape(us)[1]+1, np.shape(us)[2]))
-    ufn = np.zeros((np.shape(un)[0]+1, np.shape(un)[1], np.shape(un)[2]))
+    ufs_g = np.zeros((np.shape(us_g)[0], np.shape(us_g)[1]+1, np.shape(us_g)[2]))
+    ufn_g = np.zeros((np.shape(un_g)[0]+1, np.shape(un_g)[1], np.shape(un_g)[2]))
     
     # define velocity at cell faces
-    ufs[:,1:-1, :] = 0.5*us[:,:-1, :] + 0.5*us[:,1:, :]
-    ufn[1:-1,:, :] = 0.5*un[:-1,:, :] + 0.5*un[1:,:, :]
+    ufs_g[:,1:-1, :] = 0.5*us_g[:,:-1, :] + 0.5*us_g[:,1:, :]
+    ufn_g[1:-1,:, :] = 0.5*un_g[:-1,:, :] + 0.5*un_g[1:,:, :]
 
-    # set empty boundary values, extending the velocities at the boundaries
-    ufs[:,0, :]  = ufs[:,1, :]
-    ufs[:,-1, :] = ufs[:,-2, :]
-   
-    ufn[0,:, :]  = ufn[1,:, :]
-    ufn[-1,:, :] = ufn[-2,:, :]
-    
-    # Lets take the average of the top and bottom and left/right boundary cells
-    # apply the average to the boundary cells
-    # this ensures that the inflow at one side is equal to the outflow at the other side
+    # apply boundary conditions to face velocities
+    if offshore_bc == 'circular' and onshore_bc == 'circular':
+        ufs_g[:, 0,  :] = 0.5*us_g[:, -1, :] + 0.5*us_g[:, 0, :]
+        ufs_g[:, -1, :] = ufs_g[:, 0, :]
+    else:
+        ufs_g[:, 0,  :] = ufs_g[:, 1, :]
+        ufs_g[:, -1, :] = ufs_g[:, -2, :]
 
-    ufs[:,0,:]  = (ufs[:,0,:]+ufs[:,-1,:])/2
-    ufs[:,-1,:] = ufs[:,0,:]     
-    ufs[0,:,:]  = (ufs[0,:,:]+ufs[-1,:,:])/2
-    ufs[-1,:,:] = ufs[0,:,:]     
-    
-    ufn[:,0,:]  = (ufn[:,0,:]+ufn[:,-1,:])/2
-    ufn[:,-1,:] = ufn[:,0,:]     
-    ufn[0,:,:]  = (ufn[0,:,:]+ufn[-1,:,:])/2
-    ufn[-1,:,:] = ufn[0,:,:] 
-
-    # also correct for the potential gradients at the boundary cells in the equilibrium concentrations
-    Cu[:,0,:]  = Cu[:,1,:]
-    Cu[:,-1,:] = Cu[:,-2,:]
-    Cu[0,:,:]  = Cu[1,:,:]
-    Cu[-1,:,:] = Cu[-2,:,:]
+    # lateral boundary conditions
+    if lateral_bc == 'circular':
+        ufn_g[0, :,  :] = 0.5*un_g[-1, :, :] + 0.5*un_g[0, :, :]
+        ufn_g[-1, :, :] = ufn_g[0, :, :]
+    else:
+        ufn_g[0, :,  :] = ufn_g[1, :, :]
+        ufn_g[-1, :, :] = ufn_g[-2, :, :]
 
     # Set Ct for the first iteration (reduce number of iterations)
     for i in range(nf):
-        Ct[:,:,i] = Cu_air[:,:,i] * zeta + Cu_bed[:,:,i] * (1. - zeta)
+        Ct_g[:,:,i] = Cu_air_g[:,:,i] * zeta_g + Cu_bed_g[:,:,i] * (1. - zeta_g)
 
     # Start iteration to steady state
-    iters = np.zeros_like(Cu, dtype=np.int32)
-    Ct_last = Ct.copy()
-    while k==0 or np.any(np.abs(Ct-Ct_last) > max_error):
-        Ct_last = Ct.copy()
+    iters = np.zeros_like(Cu_g, dtype=np.int32)
+    Ct_last = Ct_g.copy()
+    while k==0 or np.any(np.abs(Ct_g-Ct_last) > max_error):
+        Ct_last = Ct_g.copy()
 
         # Update Cu
-        Cu = update_Cu(Ct, Cu_air, Cu_bed, zeta)
+        Cu_g = update_Cu(Ct_g, Cu_air_g, Cu_bed_g, zeta_g)
 
         # apply boundary conditions
-        Ct = apply_boundary(Ct, Cu, uws, uwn,
-                            offshore_bc, onshore_bc, lateral_bc,
-                            offshore_flux, onshore_flux, lateral_flux)
-        
+        Ct_g, Cu_g = apply_boundary(Ct_g, Cu_g, uws, uwn,
+                                offshore_bc, onshore_bc, lateral_bc,
+                                offshore_flux, onshore_flux, lateral_flux)
+
         # Update weights
-        w = update_weights(Ct, Cu, mass, bi)
+        w_g = update_weights(Ct_g, Cu_g, mass_g, bi)
 
         # initialize visited matrix and quadrant matrix
-        visited = np.zeros(Ct.shape[:2], dtype=np.bool_)
-        quad = np.zeros(Ct.shape[:2], dtype=np.uint8)
+        visited = np.zeros(Ct_g.shape[:2], dtype=np.bool_)
+        quad = np.zeros(Ct_g.shape[:2], dtype=np.uint8)
 
         solvers = [_solve_quadrant1, _solve_quadrant2,
                    _solve_quadrant3, _solve_quadrant4,
                    _solve_generic_stencil]
 
         for solver in solvers:
-            solver(Ct, Cu_air, Cu_bed, zeta, mass, pickup, pickup0, w,
-                   dt, Ts, ds, dn, ufs, ufn, visited, quad, nf)
+            solver(Ct_g, Cu_air_g, Cu_bed_g, zeta_g, mass_g, pickup_g, pickup0_g, w_g,
+                   dt, Ts, ds_g, dn_g, ufs_g, ufn_g, visited, quad, nf)
 
-        # Under-relaxation
-        omega = 0.99
-        Ct[:] = Ct_last + omega*(Ct - Ct_last)
+        # # Under-relaxation
+        # omega = 0.99
+        # Ct_g[:] = Ct_last + omega*(Ct_g - Ct_last)
 
         k+=1
 
         # Add iteration count to all cells that have not yet converged
-        ix_notconverged = np.abs(Ct - Ct_last) > max_error
+        ix_notconverged = np.abs(Ct_g - Ct_last) > max_error
         iters[ix_notconverged] = k
 
         if k > max_iter:
-            max_diff = np.max(np.abs(Ct - Ct_last))
-            ix_max_diff = np.unravel_index(np.argmax(np.abs(Ct - Ct_last)), Ct.shape)
-            rel_total_diff = 100 * np.sum(np.abs(Ct - Ct_last)) / np.sum(np.abs(Ct_last))
+            max_diff = np.max(np.abs(Ct_g - Ct_last))
+            ix_max_diff = np.unravel_index(np.argmax(np.abs(Ct_g - Ct_last)), Ct_g.shape)
+            rel_total_diff = 100 * np.sum(np.abs(Ct_g - Ct_last)) / np.sum(np.abs(Ct_last))
             rel_cell_diff = 100 * max_diff / np.abs(Ct_last[ix_max_diff])
             logger.warning(f'Limit of k, max. dCt {max_diff:.3e}, rel. dCt total: {rel_total_diff:.1f}%, cell: {rel_cell_diff:.1f}%')
 
@@ -816,10 +795,13 @@ def sweep(Ct, Cu_bed, Cu_air, zeta, mass, dt, Ts, ds, dn, us, un, w,
     #     print(f"Number of sweeps: {k}")
 
     # Update Cu (final time)
-    Cu = update_Cu(Ct, Cu_air, Cu_bed, zeta)
+    Cu_g = update_Cu(Ct_g, Cu_air_g, Cu_bed_g, zeta_g)
 
     # Store difference between old and new Ct for convergence monitoring
-    dCt = Ct - Ct_last
+    dCt = Ct_g - Ct_last
+
+    (Cu, Ct, pickup, pickup0, w, dCt, iters, ufs, ufn) = [
+        _deghost(a) for a in (Cu_g, Ct_g, pickup_g, pickup0_g, w_g, dCt, iters, ufs_g, ufn_g)]
 
     return Cu, Ct, pickup, pickup0, w, dCt, iters
 
@@ -888,67 +870,95 @@ def update_weights(Ct, Cu, mass, bi):
     return w
 
 
-
 def apply_boundary(Ct, Cu, uws, uwn,
-                   offshore_bc, onshore_bc, lateral_bc,
-                   offshore_flux, onshore_flux, lateral_flux):
+                         offshore_bc, onshore_bc, lateral_bc,
+                         offshore_flux, onshore_flux, lateral_flux):
 
-    # Offshore boundary (only for left-to-right; uws >= 0)
-    if uws >= 0:
-        if offshore_bc == 'circular':
-            Ct[:,0,:] = Ct[:,-1,:].copy()
-        elif offshore_bc == 'flux':
-            Ct[:,0,:] = offshore_flux * Cu[:,0,:].copy()
-        elif offshore_bc == 'constant':
-            Ct[:,0,:] = Ct[:,1,:].copy()
-        else:
-            logger.error(f'Unknown offshore boundary condition: {offshore_bc}')
+    # Pair enforcement for s-direction circular
+    s_circ = (offshore_bc == 'circular')
+    if s_circ != (onshore_bc == 'circular'):
+        msg = "offshore_bc and onshore_bc must both be 'circular' (or both non-circular)."
+        logger.error(msg)
+        raise ValueError(msg)
 
-    # Onshore boundary (only for right-to-left; uws < 0)
-    if uws < 0:
-        if onshore_bc == 'circular':
-            Ct[:,-1,:] = Ct[:,0,:].copy()
-        elif onshore_bc == 'flux':
-            Ct[:,-1,:] = onshore_flux * Cu[:,-1,:].copy()
-        elif onshore_bc == 'constant':
-            Ct[:,-1,:] = Ct[:,-2,:].copy()
+    # ----- s-direction ghosts (west/east) -----
+    if s_circ:
+        # periodic: west ghost copies last physical col; east ghost copies first physical col
+        Ct[:, 0,  :] = Ct[:, -2, :]
+        Ct[:, -1, :] = Ct[:,  1, :]
+        Cu[:, 0,  :] = Cu[:, -2, :]
+        Cu[:, -1, :] = Cu[:,  1, :]
+    else:
+        # West ghost (offshore boundary)
+        if uws >= 0:  # inflow from west
+            if offshore_bc == 'flux':
+                Ct[:, 0, :] = offshore_flux * Cu[:, 1, :]
+            elif offshore_bc == 'constant':
+                Ct[:, 0, :] = Ct[:, 1, :]
+            else:
+                logger.error(f"Unknown offshore BC: {offshore_bc}")
         else:
-            logger.error(f'Unknown onshore boundary condition: {onshore_bc}')
+            # outflow: zero-gradient ghost
+            Ct[:, 0, :] = Ct[:, 1, :]
 
-    # Lateral boundary (only for bottom-to-top; uwn >= 0)
-    if uwn >= 0:
-        if lateral_bc == 'circular':
-            Ct[0,:,:] = Ct[-1,:,:].copy()
-        elif lateral_bc == 'flux':
-            Ct[0,:,:] = lateral_flux * Cu[0,:,:].copy()
-        elif lateral_bc == 'constant':
-            Ct[0,:,:] = Ct[1,:,:].copy()
-        else:
-            logger.error(f'Unknown lateral boundary condition: {lateral_bc}')
-    
-    # Lateral boundary (only for top-to-bottom; uwn < 0)
-    if uwn < 0:
-        if lateral_bc == 'circular':
-            Ct[-1,:,:] = Ct[0,:,:].copy()
-        elif lateral_bc == 'flux':
-            Ct[-1,:,:] = lateral_flux * Cu[-1,:,:].copy()
-        elif lateral_bc == 'constant':
-            Ct[-1,:,:] = Ct[-2,:,:].copy()
-        else:
-            logger.error(f'Unknown lateral boundary condition: {lateral_bc}')
+        Cu[:, 0, :] = Cu[:, 1, :]
 
-    return Ct
+        # East ghost (onshore boundary)
+        if uws < 0:   # inflow from east
+            if onshore_bc == 'flux':
+                Ct[:, -1, :] = onshore_flux * Cu[:, -2, :]
+            elif onshore_bc == 'constant':
+                Ct[:, -1, :] = Ct[:, -2, :]
+            else:
+                logger.error(f"Unknown onshore BC: {onshore_bc}")
+        else:
+            Ct[:, -1, :] = Ct[:, -2, :]
+
+        Cu[:, -1, :] = Cu[:, -2, :]
+
+    # ----- n-direction ghosts (south/north) -----
+    if lateral_bc == 'circular':
+        Ct[0,  :, :] = Ct[-2, :, :]
+        Ct[-1, :, :] = Ct[ 1, :, :]
+        Cu[0,  :, :] = Cu[-2, :, :]
+        Cu[-1, :, :] = Cu[ 1, :, :]
+    else:
+        # South ghost
+        if uwn >= 0:
+            if lateral_bc == 'flux':
+                Ct[0, :, :] = lateral_flux * Cu[1, :, :]
+            elif lateral_bc == 'constant':
+                Ct[0, :, :] = Ct[1, :, :]
+            else:
+                logger.error(f"Unknown lateral BC: {lateral_bc}")
+        else:
+            Ct[0, :, :] = Ct[1, :, :]
+
+        Cu[0, :, :] = Cu[1, :, :]
+
+        # North ghost
+        if uwn < 0:
+            if lateral_bc == 'flux':
+                Ct[-1, :, :] = lateral_flux * Cu[-2, :, :]
+            elif lateral_bc == 'constant':
+                Ct[-1, :, :] = Ct[-2, :, :]
+            else:
+                logger.error(f"Unknown lateral BC: {lateral_bc}")
+        else:
+            Ct[-1, :, :] = Ct[-2, :, :]
+
+        Cu[-1, :, :] = Cu[-2, :, :]
+
+    return Ct, Cu
+
 
 
 @njit(cache=True)
 def _solve_quadrant1(Ct, Cu_air, Cu_bed, zeta, mass, pickup, pickup0, w,
                      dt, Ts, ds, dn, ufs, ufn, visited, quad, nf):
 
-    n0 = 1 # 1
-    s0 = 1 # 1
-
-    for n in range(n0, Ct.shape[0]):
-        for s in range(s0, Ct.shape[1]):
+    for n in range(1, Ct.shape[0] - 1):
+        for s in range(1, Ct.shape[1] - 1):
 
             if ((not visited[n, s]) and
                 (ufn[n,s,0] >= 0) and (ufs[n,s,0] >= 0) and
@@ -1003,11 +1013,8 @@ def _solve_quadrant1(Ct, Cu_air, Cu_bed, zeta, mass, pickup, pickup0, w,
 def _solve_quadrant2(Ct, Cu_air, Cu_bed, zeta, mass, pickup, pickup0, w,
                      dt, Ts, ds, dn, ufs, ufn, visited, quad, nf):
 
-    n0 = 1 # 1
-    s1 = Ct.shape[1]-2 # Ct.shape[1]-2
-
-    for n in range(n0, Ct.shape[0]):
-        for s in range(s1, -1, -1):
+    for n in range(1, Ct.shape[0]-1):
+        for s in range(Ct.shape[1]-2, 0, -1):
 
             if ((not visited[n,s]) and
                 (ufn[n,s,0] >= 0) and (ufs[n,s,0] <= 0) and
@@ -1059,11 +1066,8 @@ def _solve_quadrant2(Ct, Cu_air, Cu_bed, zeta, mass, pickup, pickup0, w,
 def _solve_quadrant3(Ct, Cu_air, Cu_bed, zeta, mass, pickup, pickup0, w,
                      dt, Ts, ds, dn, ufs, ufn, visited, quad, nf):
 
-    n1 = Ct.shape[0]-2 # Ct.shape[0]-2
-    s1 = Ct.shape[1]-2 # Ct.shape[1]-2
-
-    for n in range(n1, -1, -1):
-        for s in range(s1, -1, -1):
+    for n in range(Ct.shape[0]-2, 0, -1):
+        for s in range(Ct.shape[1]-2, 0, -1):
 
             if ((not visited[n,s]) and
                 (ufn[n,s,0] <= 0) and (ufs[n,s,0] <= 0) and
@@ -1115,11 +1119,8 @@ def _solve_quadrant3(Ct, Cu_air, Cu_bed, zeta, mass, pickup, pickup0, w,
 def _solve_quadrant4(Ct, Cu_air, Cu_bed, zeta, mass, pickup, pickup0, w,
                      dt, Ts, ds, dn, ufs, ufn, visited, quad, nf):
 
-    n1 = Ct.shape[0]-2 # Ct.shape[0]-2
-    s0 = 1 # 1
-
-    for n in range(n1, -1, -1):
-        for s in range(s0, Ct.shape[1]):
+    for n in range(Ct.shape[0]-2, 0, -1):
+        for s in range(1, Ct.shape[1]-1):
 
             if ((not visited[n,s]) and
                 (ufn[n,s,0] <= 0) and (ufs[n,s,0] >= 0) and
@@ -1249,3 +1250,57 @@ def _solve_generic_stencil(Ct, Cu_air, Cu_bed, zeta, mass, pickup, pickup0, w,
 
                 visited[n,s] = True
                 quad[n,s] = 5
+
+def _ghostify(arr, offshore_bc=None, onshore_bc=None, lateral_bc=None):
+    """
+    Add 1-cell ghost halo in y and x and fill ghosts according to BCs.
+    Assumes arr is physical domain (ny, nx, ...).
+    """
+
+    # Allocate halo
+    if arr.ndim == 2:
+        ny, nx = arr.shape
+        out = np.empty((ny+2, nx+2), dtype=arr.dtype)
+        out[1:-1, 1:-1] = arr
+
+    elif arr.ndim == 3:
+        ny, nx, nf = arr.shape
+        out = np.empty((ny+2, nx+2, nf), dtype=arr.dtype)
+        out[1:-1, 1:-1, :] = arr
+
+    elif arr.ndim == 4:
+        ny, nx, a, b = arr.shape
+        out = np.empty((ny+2, nx+2, a, b), dtype=arr.dtype)
+        out[1:-1, 1:-1, :, :] = arr
+
+    else:
+        raise ValueError("Unsupported ndim for ghostify")
+
+    # ------------------------------------------------------------
+    # Fill west/east ghosts (s-direction)
+    # ------------------------------------------------------------
+    if offshore_bc == 'circular' and onshore_bc == 'circular':
+        out[:, 0,  ...] = out[:, -2, ...]
+        out[:, -1, ...] = out[:,  1, ...]
+    else:
+        # zero-gradient default
+        out[:, 0,  ...] = out[:, 1,  ...]
+        out[:, -1, ...] = out[:, -2, ...]
+
+    # ------------------------------------------------------------
+    # Fill south/north ghosts (n-direction)
+    # ------------------------------------------------------------
+    if lateral_bc == 'circular':
+        out[0,  :, ...] = out[-2, :, ...]
+        out[-1, :, ...] = out[ 1, :, ...]
+    else:
+        # zero-gradient default
+        out[0,  :, ...] = out[1,  :, ...]
+        out[-1, :, ...] = out[-2, :, ...]
+
+    return out
+
+
+def _deghost(arr_g):
+    """Remove 1-cell halo."""
+    return arr_g[1:-1, 1:-1, ...]

@@ -52,7 +52,7 @@ def compute_zeta(s, p):
     # --- Apply Gaussian filter to zeta --------------------------------------
     if p['zeta_sigma'] > 0.0:
         s['zeta'] = ndimage.gaussian_filter(s['zeta'], sigma=p['zeta_sigma'])
-    # s['zeta'] = np.clip(s['zeta'], 0.05, 1.0)
+    s['zeta'] = np.clip(s['zeta'], 0.01, 1.0)
 
     return s
 
