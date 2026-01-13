@@ -143,7 +143,7 @@ class WindShear:
        
 
     def __call__(self, p, x, y, z, u0, udir, 
-                 taux, tauy, taus0, taun0, plot=False):
+                 taux, tauy, taus0, taun0, plot=False, sigma=0.):
         
         '''Compute wind shear for given wind speed and direction
         
@@ -224,9 +224,14 @@ class WindShear:
             z_origin = gc['z'][:].copy()
             zsep = compute_separation(p, gc['z'], gc['dx'])
             gc['z'] = np.maximum(gc['z'], zsep)
+
+        # Smooth bed level before fourier transform
+        # This reduces high-frequency noise at steep gradients (Gibbs effect)
+        if sigma > 0.:
+            gc['z'] = ndimage.gaussian_filter(gc['z'], sigma=sigma)
                     
         # Compute wind shear stresses on computational grid 
-        self.compute_shear(u0, nfilter=(1., 2.))
+        self.compute_shear(u0, nfilter=(2., 4.))
         
         # Add shear
         self.add_shear()
@@ -396,7 +401,8 @@ class WindShear:
         ny, nx = gc['z'].shape
         kx, ky = np.meshgrid(2. * np.pi * np.fft.fftfreq(nx, gc['dx']),
                              2. * np.pi * np.fft.fftfreq(ny, gc['dy']))
-        
+
+        # Fourier transform of bed level
         hs = np.fft.fft2(gc['z'])
         hs = self.filter_highfrequenies(kx, ky, hs, nfilter)
         

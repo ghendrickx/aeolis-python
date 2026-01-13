@@ -369,6 +369,7 @@ DEFAULT_CONFIG = {
     'dy'                            : 1.,
     'L'                             : 100.,               # [m] Typical length scale of dune feature (perturbation)
     'l'                             : 10.,                # [m] Inner layer height (perturbation)
+    'zshear_sigma'                  : 0.,                 # [-] Standard deviation of Gaussian filter for shear stress perturbation
 
     # --- Flow separation bubble (OLD) --------------------------------------------------------------------------------
     'buffer_width'                  : 10,                 # [m] Width of the bufferzone around the rotational grid for wind perturbation
