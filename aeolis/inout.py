@@ -185,14 +185,14 @@ def write_configfile(configfile, p=None):
         
         if in_default_config:
             # Check for section header (starts with # ---)
-            if line.strip().startswith('#') and len(line.strip()) > 10:
+            if line.strip().startswith('# ---') and len(line.strip()) > 10:
                 # Save previous section
                 if current_section and current_keys:
                     section_order[current_section] = current_keys
                     current_keys = []
                 
                 # Extract new section name (between # --- and ---)
-                text = line.strip()[5:].strip()
+                text = line.strip()[5:].strip().rstrip('- #')
                 current_section = text
                 section_headers.append(current_section)
             
@@ -232,12 +232,17 @@ def write_configfile(configfile, p=None):
                 continue
             
             # Write section header
-            fp.write('%%%% %s %s %%%%\n' % ('-' * 15, section))
+            fp.write('%% %s %s %s %% \n' % ('-' * 15, section, '-' * 15))
             # fp.write('%% %s\n' % ('-' * 70))
             
             # Write each key in this section
             for key in section_keys:
                 value = p[key]
+
+                # Skip this key if its value matches the default
+                if key in DEFAULT_CONFIG and np.all(value == DEFAULT_CONFIG[key]) :
+                    continue
+                
                 comment = comments.get(key, '')
                 
                 # Format the value
@@ -257,6 +262,11 @@ def write_configfile(configfile, p=None):
             # fp.write('%% %s\n' % ('-' * 70))
             for key in sorted(remaining_keys):
                 value = p[key]
+                
+                # Skip this key if its value matches the default
+                if key in DEFAULT_CONFIG and np.all(value == DEFAULT_CONFIG[key]):
+                    continue
+                
                 comment = comments.get(key, '')               
                 formatted_value = print_value(value, fill='None')
                 fp.write('{:<{width}} = {:<20} %% {}\n'.format(
@@ -372,7 +382,11 @@ def parse_value(val, parse_files=True, force_list=False):
         
     val = val.strip()
     
-    if ' ' in val or force_list:
+    # Check for datetime patterns (YYYY-MM-DD HH:MM:SS or similar)
+    # Treat as string if it matches datetime format
+    if re.match(r'^\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}(:\d{2})?', val):
+        return val
+    elif ' ' in val or force_list:
         return np.asarray([parse_value(x) for x in val.split(' ')])
     elif re.match('^[TF]$', val):
         return val == 'T'
