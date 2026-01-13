@@ -236,7 +236,7 @@ def shear(s, p):
         s['ustarnAir'] = s['ustarn'].copy()
         return s
 
-   # --- 1D and stacked-1D (independent rows) --------------------------------
+    # --- 1D and stacked-1D (independent rows) --------------------------------
     if p['ny'] == 0 or p['method_shear'] == '1Dstacks':
 
         # Compute separation bubble
@@ -247,6 +247,10 @@ def shear(s, p):
         else:
             s['zsep'] = s['zb'].copy()
             s['hsep'] = np.zeros_like(s['zb'])
+
+        # --- FIX: bed level smoothed for shear calculation only ---
+        # This reduces the generation of high-frequency noise at steep gradients (Gibbs effect)
+        s['zshear'] = ndimage.gaussian_filter(s['zsep'].copy(), sigma=p['zshear_sigma'])
 
         # Compute shear perturbation
         s = compute_shear1d(s, p)
@@ -274,6 +278,7 @@ def shear(s, p):
             u0=s['uw'][0, 0], udir=s['udir'][0, 0],
             taux=s['taus'], tauy=s['taun'],
             taus0=s['taus0'][0, 0], taun0=s['taun0'][0, 0],
+            sigma=p['zshear_sigma']
         )
 
         # Get shear stress and velocity
@@ -347,9 +352,9 @@ def compute_shear1d(s, p):
     etn[ix] = taun0[ix] / tau0[ix]
 
     # Effective bed used for perturbation
-    zb = s['zb']
-    if ('zsep' in s) and (s['zsep'] is not None):
-        zb = np.maximum(zb, s['zsep'])
+    zb = s['zshear'].copy()
+    # if ('zsep' in s) and (s['zsep'] is not None):
+    #     zb = np.maximum(zb, s['zsep'])
 
     # Wind sign handling (kept consistent with existing convention)
     flip = np.sum(taus0) < 0.0
