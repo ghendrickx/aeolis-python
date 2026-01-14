@@ -771,10 +771,8 @@ def sweep(Ct, Cu_bed, Cu_air, zeta, mass, dt, Ts, ds, dn, us, un, w,
                                 offshore_flux, onshore_flux, lateral_flux)
 
         # --- enforce physical limits (Prevent negative concentrations) ------
-        # Ct_g = np.clip(Ct_g, 0.0, Cu_air_g) 
-        for nf in range(Ct_g.shape[2]):
-            Ct_g[:,:,nf] = np.clip(Ct_g[:,:,nf], 0.0, np.max(Cu_air_g[:,:,nf]))
-        # Ct_g = np.maximum(Ct_g, 0.0)
+        for i_nf in range(Ct_g.shape[2]):
+            Ct_g[:,:,i_nf] = np.clip(Ct_g[:,:,i_nf], 0.0, np.max(Cu_air_g[:,:,i_nf])) # pragmatic upper limit to prevent blow-up
         Cu_g = np.maximum(Cu_g, 0.0)
 
         # --- update weights (w) ---------------------------------------------
