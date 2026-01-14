@@ -177,8 +177,8 @@ MODEL_STATE = {
         'qs',                               # [kg/m/s] Instantaneous sediment flux in x-direction
         'qn',                               # [kg/m/s] Instantaneous sediment flux in y-direction
         'pickup',                           # [kg/m^2] Sediment entrainment
-        'pickup0',                          # [kg/m^2] Sediment entrainment without mass limitation
-        'masstop',                          # [kg/m^2] Sediment mass in bed toplayer, only stored for output
+        'pickup0',                          # [kg/m^2] Sediment entrainment without mass limitation (for monitoring mass loss)
+        'masstop',                          # [kg/m^2] Sediment mass in bed toplayer, stored for efficient output only
 
         # --- Sediment bed composition variables ----------------------------------------------------------------------
         'w',                                # [-] Weights of sediment fractions
@@ -334,10 +334,9 @@ DEFAULT_CONFIG = {
     'solver'                        : 'steadystate',      # Name of the solver (steadystate, euler_backward, euler_forward)
 
     # --- Boundary conditions -----------------------------------------------------------------------------------------
-    'boundary_lateral'              : 'flux',             # Name of lateral boundary conditions (circular, flux or constant)
-    'boundary_offshore'             : 'flux',             # Name of offshore boundary conditions (circular, flux or constant)
-    'boundary_onshore'              : 'flux',             # Name of onshore boundary conditions (circular, flux or constant)
-
+    'boundary_lateral'              : 'constant',         # Name of lateral boundary conditions (circular, flux or constant)
+    'boundary_offshore'             : 'constant',         # Name of offshore boundary conditions (circular, flux or constant)
+    'boundary_onshore'              : 'constant',         # Name of onshore boundary conditions (circular, flux or constant)
     'offshore_flux'                 : 1.,                 # [-] Factor to determine offshore boundary flux as a function of Cu (= 1 for saturated, = 0 for noflux)
     'onshore_flux'                  : 1.,                 # [-] Factor to determine onshore boundary flux as a function of Cu (= 1 for saturated, = 0 for noflux)
     'lateral_flux'                  : 1.,                 # [-] Factor to determine lateral boundary flux as a function of Cu (= 1 for saturated, = 0 for noflux)
@@ -369,7 +368,6 @@ DEFAULT_CONFIG = {
     'dy'                            : 1.,
     'L'                             : 100.,               # [m] Typical length scale of dune feature (perturbation)
     'l'                             : 10.,                # [m] Inner layer height (perturbation)
-    'zshear_sigma'                  : 0.,                 # [-] Standard deviation of Gaussian filter for shear stress perturbation
 
     # --- Flow separation bubble (OLD) --------------------------------------------------------------------------------
     'buffer_width'                  : 10,                 # [m] Width of the bufferzone around the rotational grid for wind perturbation
@@ -441,7 +439,7 @@ DEFAULT_CONFIG = {
     'germinate'                     : 0.,                 # [1/year] Possibility of germination per year
     'lateral'                       : 0.,                 # [1/year] Posibility of lateral expension per year
     'veg_gamma'                     : 1.,                 # [-] Constant on influence of sediment burial
-    'veg_sigma'                     : 0.,                   # [-] Sigma in gaussian distrubtion of vegetation cover filter
+    'veg_sigma'                     : 0.,                 # [-] Sigma in gaussian distrubtion of vegetation cover filter
     'vegshear_type'                 : 'raupach',          # Choose the Raupach grid based solver (1D or 2D) or the Okin approach (1D only)
     'okin_c1_veg'                   : 0.48,               #x/h spatial reduction factor in Okin model for use with vegetation
     'okin_c1_fence'                 : 0.48,               #x/h spatial reduction factor in Okin model for use with sand fence module
@@ -507,7 +505,7 @@ DEFAULT_CONFIG = {
     'c1_okin'                       : [0.48],        # [-] Downwind decay coefficient in Okin shear reduction
 
     'veg_sigma'                     : 0.,            # [-] Sigma in gaussian distrubtion of vegetation cover filter
-    'zeta_sigma'                    : 0.,            # [-] Standard deviation for smoothing vegetation bed interaction parameter
+    # 'zeta_sigma'                    : 0.,            # [-] Standard deviation for smoothing vegetation bed interaction parameter
 
     'alpha_comp'                    : [0.],          # [-] Lotka–Volterra competition coefficients
                                                      #      shape: nspecies * nspecies (flattened)
