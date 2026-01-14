@@ -302,7 +302,7 @@ def update(s, p):
 
     # # negative mass may occur in case of deposition due to numerics,
     # # which should be prevented
-    # m, dm, pickup = prevent_negative_mass(m, dm, pickup)
+    m, dm, pickup = prevent_negative_mass(m, dm, pickup)
 
     # determine weighing factors
     d = normalize(m, axis=2)
