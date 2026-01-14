@@ -721,17 +721,33 @@ def sweep(Ct, Cu_bed, Cu_air, zeta, mass, dt, Ts, ds, dn, us, un, w,
     ufn_g[1:-1,:, :] = 0.5*un_g[:-1,:, :] + 0.5*un_g[1:,:, :]
 
     # --- apply boundary conditions to face velocities -----------------------
+    
+    # s-direction (offshore/onshore)
     if offshore_bc == 'circular' and onshore_bc == 'circular':
-        ufs_g[:, 0,  :] = 0.5*us_g[:, -1, :] + 0.5*us_g[:, 0, :]
-        ufs_g[:, -1, :] = ufs_g[:, 0, :]
+        u_circ_s = 0.5*us_g[:, -1, :] + 0.5*us_g[:, 0, :]
+
+        # apply to physical influx/outflux faces
+        ufs_g[:, 1,  :] = u_circ_s
+        ufs_g[:, -2, :] = u_circ_s
+        # update ghost faces for consistency
+        ufs_g[:, 0,  :] = u_circ_s
+        ufs_g[:, -1, :] = u_circ_s
+
     else:
         ufs_g[:, 0,  :] = ufs_g[:, 1, :]
         ufs_g[:, -1, :] = ufs_g[:, -2, :]
 
-    # --- and lateral boundary conditions ------------------------------------
+    # n-direction (lateral)
     if lateral_bc == 'circular':
-        ufn_g[0, :,  :] = 0.5*un_g[-1, :, :] + 0.5*un_g[0, :, :]
-        ufn_g[-1, :, :] = ufn_g[0, :, :]
+        u_circ_n = 0.5*un_g[-1, :, :] + 0.5*un_g[0, :, :]
+
+        # apply to physical influx/outflux faces
+        ufn_g[1, :,  :] = u_circ_n
+        ufn_g[-2, :, :] = u_circ_n
+        # update ghost faces for consistency
+        ufn_g[0, :,  :] = u_circ_n
+        ufn_g[-1, :, :] = u_circ_n
+
     else:
         ufn_g[0, :,  :] = ufn_g[1, :, :]
         ufn_g[-1, :, :] = ufn_g[-2, :, :]
@@ -755,7 +771,7 @@ def sweep(Ct, Cu_bed, Cu_air, zeta, mass, dt, Ts, ds, dn, us, un, w,
                                 offshore_flux, onshore_flux, lateral_flux)
 
         # --- enforce physical limits (Prevent negative concentrations) ------
-        Ct_g = np.clip(Ct_g, 0.0, Cu_air_g) 
+        Ct_g = np.clip(Ct_g, 0.0, np.max(Cu_air_g)) # pragmatic fix
         Cu_g = np.maximum(Cu_g, 0.0)
 
         # --- update weights (w) ---------------------------------------------
@@ -772,7 +788,7 @@ def sweep(Ct, Cu_bed, Cu_air, zeta, mass, dt, Ts, ds, dn, us, un, w,
         for solver in solvers:
             solver(Ct_g, Cu_air_g, Cu_bed_g, zeta_g, mass_g, pickup_g, pickup0_g, w_g,
                    dt, Ts, ds_g, dn_g, ufs_g, ufn_g, visited, quad, nf)
-
+            
         k+=1
 
         # --- add iteration count to all cells that have not yet converged ---
@@ -786,9 +802,15 @@ def sweep(Ct, Cu_bed, Cu_air, zeta, mass, dt, Ts, ds, dn, us, un, w,
             rel_total_diff = 100 * np.sum(np.abs(Ct_g - Ct_last)) / np.sum(np.abs(Ct_last))
             rel_cell_diff = 100 * max_diff / np.abs(Ct_last[ix_max_diff])
             logger.warning(f'Limit of k, max. dCt {max_diff:.3e}, rel. dCt total: {rel_total_diff:.1f}%, cell: {rel_cell_diff:.1f}%')
-
+            
+            # when iteration not converged, set relevant results to zero
+            Ct_g[:] = 0.
+            Cu_g[:] = 0.
+            pickup_g[:] = 0.
+            pickup0_g[:] = 0.
+            
             break
-
+                
     # --- update Cu (final time for output) ----------------------------------
     Cu_g = update_Cu(Ct_g, Cu_air_g, Cu_bed_g, zeta_g)
     dCt = Ct_g - Ct_last
@@ -1007,11 +1029,16 @@ def _solve_quadrant1(Ct, Cu_air, Cu_bed, zeta, mass, pickup, pickup0, w,
 
                     # check against available mass
                     if p > mass[n,s,0,f]:
-                        p = mass[n,s,0,f]
+                        p_lim = mass[n,s,0,f]
                         
                         # solve limited state
-                        N_lim = N + p * A/dt
-                        Ct[n,s,f] = N_lim / D_eff
+                        N_lim = N + p_lim * A/dt
+                        Ct_new = N_lim / D_eff
+                        Ct[n,s,f] = Ct_new
+
+                        # net pickup after deposition
+                        deposition = (1.0 - wa) * Ct_new * dt / Ts
+                        p = p_lim - deposition
 
                     # store pickup
                     pickup[n,s,f] = p
@@ -1065,11 +1092,16 @@ def _solve_quadrant2(Ct, Cu_air, Cu_bed, zeta, mass, pickup, pickup0, w,
                     p = (wf * Cu_local - Ct_new) * dt/Ts
                     
                     pickup0[n,s,f] = np.abs(p)
+                    
                     if p > mass[n,s,0,f]:
-                        p = mass[n,s,0,f]
+                        p_lim = mass[n,s,0,f]
                         
-                        N_lim = N + p * A/dt
-                        Ct[n,s,f] = N_lim / D_eff
+                        N_lim = N + p_lim * A/dt
+                        Ct_new = N_lim / D_eff
+                        Ct[n,s,f] = Ct_new
+
+                        deposition = (1.0 - wa) * Ct_new * dt / Ts
+                        p = p_lim - deposition
 
                     pickup[n,s,f] = p
 
@@ -1101,6 +1133,7 @@ def _solve_quadrant3(Ct, Cu_air, Cu_bed, zeta, mass, pickup, pickup0, w,
                         a = 0.0
                         b = Cu_bed[n,s,f]
 
+                    # Note: Original code uses dn for ufn in Q3. Preserved for consistency.
                     N = (-Ct[n+1,s,f] * ufn[n+1,s,f] * dn[n,s] +
                         -Ct[n,s+1,f] * ufs[n,s+1,f] * dn[n,s])
 
@@ -1121,11 +1154,16 @@ def _solve_quadrant3(Ct, Cu_air, Cu_bed, zeta, mass, pickup, pickup0, w,
                     p = (wf * Cu_local - Ct_new) * dt/Ts
                     
                     pickup0[n,s,f] = np.abs(p)
+                    
                     if p > mass[n,s,0,f]:
-                        p = mass[n,s,0,f]
+                        p_lim = mass[n,s,0,f]
                         
-                        N_lim = N + p * A/dt
-                        Ct[n,s,f] = N_lim / D_eff
+                        N_lim = N + p_lim * A/dt
+                        Ct_new = N_lim / D_eff
+                        Ct[n,s,f] = Ct_new
+
+                        deposition = (1.0 - wa) * Ct_new * dt / Ts
+                        p = p_lim - deposition
 
                     pickup[n,s,f] = p
 
@@ -1157,6 +1195,7 @@ def _solve_quadrant4(Ct, Cu_air, Cu_bed, zeta, mass, pickup, pickup0, w,
                         a = 0.0
                         b = Cu_bed[n,s,f]
 
+                    # Note: Original code uses dn for ufn in Q4. Preserved for consistency.
                     N = (Ct[n,s-1,f] * ufs[n,s,f] * dn[n,s] +
                         -Ct[n+1,s,f] * ufn[n+1,s,f] * dn[n,s])
 
@@ -1177,11 +1216,16 @@ def _solve_quadrant4(Ct, Cu_air, Cu_bed, zeta, mass, pickup, pickup0, w,
                     p = (wf * Cu_local - Ct_new) * dt/Ts
                     
                     pickup0[n,s,f] = np.abs(p)
+                    
                     if p > mass[n,s,0,f]:
-                        p = mass[n,s,0,f]
+                        p_lim = mass[n,s,0,f]
             
-                        N_lim = N + p * A/dt
-                        Ct[n,s,f] = N_lim / D_eff
+                        N_lim = N + p_lim * A/dt
+                        Ct_new = N_lim / D_eff
+                        Ct[n,s,f] = Ct_new
+
+                        deposition = (1.0 - wa) * Ct_new * dt / Ts
+                        p = p_lim - deposition
 
                     pickup[n,s,f] = p
 
@@ -1240,11 +1284,16 @@ def _solve_generic_stencil(Ct, Cu_air, Cu_bed, zeta, mass, pickup, pickup0, w,
                     p = (wf * Cu_local - Ct_new) * dt/Ts
                     
                     pickup0[n,s,f] = np.abs(p)
+                    
                     if p > mass[n,s,0,f]:
-                        p = mass[n,s,0,f]
+                        p_lim = mass[n,s,0,f]
                         
-                        N_lim = N + p * A/dt
-                        Ct[n,s,f] = N_lim / D_eff
+                        N_lim = N + p_lim * A/dt
+                        Ct_new = N_lim / D_eff
+                        Ct[n,s,f] = Ct_new
+
+                        deposition = (1.0 - wa) * Ct_new * dt / Ts
+                        p = p_lim - deposition
 
                     pickup[n,s,f] = p
 

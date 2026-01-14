@@ -300,10 +300,10 @@ def update(s, p):
     # reshape mass matrix
     m = s['mass'].reshape((-1,nl,nf)).copy()
 
-    # negative mass may occur in case of deposition due to numerics,
-    # which should be prevented
-    m, dm, pickup = prevent_negative_mass(m, dm, pickup)
-    
+    # # negative mass may occur in case of deposition due to numerics,
+    # # which should be prevented
+    # m, dm, pickup = prevent_negative_mass(m, dm, pickup)
+
     # determine weighing factors
     d = normalize(m, axis=2)
     
