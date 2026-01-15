@@ -213,7 +213,7 @@ def duran_grainspeed(s, p):
             # Solver van eq 1.61
             def solve_u(u_i: complex, veff_i: complex, uf_i: float, alpha_i: float, dh_i: complex) -> complex:
                 return (veff_i - u_i) * np.abs(veff_i - u_i) / (uf_i ** 2) - u_i / (2 * alpha_i * np.abs(u_i)) - dh_i
-            u_i = optimize.newton(solve_u, u_approx_i, maxiter=20, tol=0.05, args=(veff_i, uf_i, alpha_i, dh_i)) 
+            u_i = optimize.newton(solve_u, u_approx_i, maxiter=100, tol=0.05, args=(veff_i, uf_i, alpha_i, dh_i)) 
 
             # Transform back into components
             us[:,:,i] = np.real(u_i)
