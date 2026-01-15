@@ -1022,6 +1022,7 @@ def _solve_quadrant1(Ct, Cu_air, Cu_bed, zeta, mass, pickup, pickup0, w,
                     # solve unlimited state
                     N_unlim = N + wf * b * A/Ts
                     Ct_new = N_unlim / D_eff
+                    Ct_new = max(Ct_new, 0.0)
                     Ct[n,s,f] = Ct_new
                     
                     # calculate pickup 
@@ -1044,7 +1045,6 @@ def _solve_quadrant1(Ct, Cu_air, Cu_bed, zeta, mass, pickup, pickup0, w,
                         deposition = (1.0 - wa) * Ct_new * dt / Ts
                         p = p_lim - deposition
 
-                    # store pickup
                     pickup[n,s,f] = p
 
                 # mark cell as visited and assign quadrant
@@ -1090,6 +1090,7 @@ def _solve_quadrant2(Ct, Cu_air, Cu_bed, zeta, mass, pickup, pickup0, w,
                     
                     N_unlim = N + wf * b * A/Ts
                     Ct_new = N_unlim / D_eff
+                    Ct_new = max(Ct_new, 0.0)
                     Ct[n,s,f] = Ct_new
                     
                     Cu_local = b + a * Ct_new
@@ -1152,6 +1153,7 @@ def _solve_quadrant3(Ct, Cu_air, Cu_bed, zeta, mass, pickup, pickup0, w,
                     
                     N_unlim = N + wf * b * A/Ts
                     Ct_new = N_unlim / D_eff
+                    Ct_new = max(Ct_new, 0.0)
                     Ct[n,s,f] = Ct_new
                     
                     Cu_local = b + a * Ct_new
@@ -1214,6 +1216,7 @@ def _solve_quadrant4(Ct, Cu_air, Cu_bed, zeta, mass, pickup, pickup0, w,
                     
                     N_unlim = N + wf * b * A/Ts
                     Ct_new = N_unlim / D_eff
+                    Ct_new = max(Ct_new, 0.0)
                     Ct[n,s,f] = Ct_new
                     
                     Cu_local = b + a * Ct_new
@@ -1282,6 +1285,7 @@ def _solve_generic_stencil(Ct, Cu_air, Cu_bed, zeta, mass, pickup, pickup0, w,
                     
                     N_unlim = N + wf * b * A/Ts
                     Ct_new = N_unlim / D_eff
+                    Ct_new = max(Ct_new, 0.0)
                     Ct[n,s,f] = Ct_new
                     
                     Cu_local = b + a * Ct_new
