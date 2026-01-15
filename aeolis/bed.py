@@ -480,7 +480,8 @@ def prevent_negative_mass(m, dm, pickup):
             # fill current layer with deposited sediment
             m[ix,i,:] = mx[ix,:].repeat(nf, axis=1) * d[ix,:]
 
-            # remove deposited sediment from pickup (add positive m to negative pickup)
+            # remove deposited sediment from pickup 
+            # THIS IS CHANGED: WAS -= (add positive m to negative pickup)
             pickup[ix,:] += m[ix,i,:] 
 
         # recompute sediment exchange mass

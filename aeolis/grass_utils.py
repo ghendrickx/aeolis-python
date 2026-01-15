@@ -221,6 +221,11 @@ def smooth_burial(s, p):
 
     # Burial rate [m/s]
     dzb_smooth = (s['zb'] - zb0) / max(t - t0, 1e-12)
+
+    # Ramp up smoothing over first T_burial
+    T_rat = (t - t0) / T
+    if T_rat < 1.0:
+        dzb_smooth *= T_rat
     
     return dzb_smooth
 
