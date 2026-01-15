@@ -771,12 +771,13 @@ def sweep(Ct, Cu_bed, Cu_air, zeta, mass, dt, Ts, ds, dn, us, un, w,
                                 offshore_flux, onshore_flux, lateral_flux)
 
         # --- enforce physical limits (Prevent negative concentrations) ------
-        for i_nf in range(Ct_g.shape[2]):
+        for i_nf in range(nf):
             Ct_g[:,:,i_nf] = np.clip(Ct_g[:,:,i_nf], 0.0, np.max(Cu_air_g[:,:,i_nf])) # pragmatic upper limit to prevent blow-up
         Cu_g = np.maximum(Cu_g, 0.0)
 
         # --- update weights (w) ---------------------------------------------
-        w_g[:] = update_weights(Ct_g, Cu_g, mass_g, bi)
+        if nf > 1:
+            w_g[:] = update_weights(Ct_g, Cu_g, mass_g, bi)
 
         # --- initialize visited matrix and quadrant matrix ------------------
         visited = np.zeros(Ct_g.shape[:2], dtype=np.bool_)
@@ -812,6 +813,8 @@ def sweep(Ct, Cu_bed, Cu_air, zeta, mass, dt, Ts, ds, dn, us, un, w,
             
             break
                 
+    # print(f'  Converged in {k} iterations.')
+
     # --- update Cu (final time for output) ----------------------------------
     Cu_g = update_Cu(Ct_g, Cu_air_g, Cu_bed_g, zeta_g)
     dCt = Ct_g - Ct_last
@@ -841,9 +844,9 @@ def update_Cu(Ct, Cu_air, Cu_bed, zeta):
                 if ca == 0.0: # no air concentration, so no transport
                     Cu[iy, ix, f] = 0.0
                 else: # compute weighted Cu
-                    w_air = (1.0 - zeta[iy, ix]) * Ct[iy, ix, f] / ca
-                    w_bed = 1.0 - w_air
-                    Cu[iy, ix, f] = (w_air * ca + w_bed * Cu_bed[iy, ix, f])
+                    w_zeta_air = (1.0 - zeta[iy, ix]) * Ct[iy, ix, f] / ca
+                    w_zeta_bed = 1.0 - w_zeta_air
+                    Cu[iy, ix, f] = (w_zeta_air * ca + w_zeta_bed * Cu_bed[iy, ix, f])
 
     return Cu
 
