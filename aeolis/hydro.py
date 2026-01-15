@@ -244,12 +244,6 @@ def update(s, p, dt,t):
 
     '''
 
-    # Reset bed interaction parameter zeta
-    if p['process_bedinteraction']:
-        s['zeta'][:,:] = p['zeta_base']
-    else:
-        s['zeta'][:,:] = 1.0 # Similar to the old advection version without zeta
-
     # Groundwater level Boussinesq (1D CS-transects)
     if p['process_groundwater']:
         

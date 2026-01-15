@@ -285,6 +285,9 @@ def shear(s, p):
         if p['process_separation']:
             s['hsep'] = s['shear'].get_separation()
             s['zsep'] = s['hsep'] + s['zb']
+        else:
+            s['zsep'] = s['zb'].copy()
+            s['hsep'] = np.zeros_like(s['zb'])
 
         s = stress_velocity(s, p)
 

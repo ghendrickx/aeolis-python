@@ -187,8 +187,13 @@ def zeta_from_vegetation(s, p):
         # --- Reduction due to bouncing (skimming) ---------------------------
         zeta_k *= (1.0 - p['bounce'][ksp])
 
-        # --- NEW: COMPENSATE FOR VEGETATION DENSITY -------------------------
-        density_factor = s['Nt'][:, :, ksp] / p['Nt_max'][ksp]
+        # --- Compensate for vegetation density ------------------------------
+        # Prevents excessive (and spikey) low zeta at low vegetation densities
+        Nt_exp = 0.3 # Exponent for density effect on zeta (lower values = less effect)
+        if p['method_vegetation'] == 'grass':
+            density_factor = (s['Nt'][:, :, ksp] / p['Nt_max'][ksp]) ** Nt_exp
+        elif p['method_vegetation'] == 'duran':
+            density_factor = s['rhoveg'] ** Nt_exp
         zeta_k = 1.0 - density_factor * (1.0 - zeta_k)
 
         # --- Accumulate for species-weighted normalisation ------------------
