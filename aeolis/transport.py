@@ -178,50 +178,67 @@ def duran_grainspeed(s, p):
     # Start looping over fractions
     for i in range(nf):  
 
-        # Compute effective wind velocity, eq 1.60 p.42
-        ueff[:,:,i] = (uth[:,:,i] / kappa) * (np.log(z1[i] / z0[i]) + (z1[i]/zm[:,:,i]) * (ustar[:,:,i]/uth[:,:,i]-1)) 
+        # Compute effective wind velocity (eq 1.60 p.42) and grainspeed over a flat bed (if dhs and dhn = 0)
         ueff0[:,:,i] = (uth0[:,:,i] / kappa) * (np.log(z1[i] / z0[i]) + (z1[i]/zm[:,:,i]) * (ustar0[:,:,i]/uth0[:,:,i]-1))
-
-        # Compute grainspeed over a flat bed (if dhs and dhn = 0)
         u0[:,:,i] = (ueff0[:,:,i] - uf[i] / (np.sqrt(2 * alpha[i])))
-        
-        # Compute grain speed: First approximation (eq 1.62) in case of gentle slopes
-        us_approx[:,:,i] = (ueff[:,:,i] - uf[i] / (np.sqrt(2. * alpha[i]) * Ax[:,:,i])) * ets[:,:,i] \
-                        - (np.sqrt(2*alpha[i]) * uf[i] / Ax[:,:,i]) * dhs[:,:,i]  
-        
-        un_approx[:,:,i] = (ueff[:,:,i] - uf[i] / (np.sqrt(2. * alpha[i]) * Ax[:,:,i])) * etn[:,:,i] \
-                        - (np.sqrt(2*alpha[i]) * uf[i] / Ax[:,:,i]) * dhn[:,:,i] 
-        
-        u_approx[:,:,i] = np.hypot(us_approx[:,:,i], un_approx[:,:,i])
 
-        # If 'regular' duran method is chosen, u_approx is the final solution
-        if p['method_grainspeed'] == 'duran':
-            us[:,:,i] = us_approx[:,:,i]
-            un[:,:,i] = un_approx[:,:,i]
-            u[:,:,i] = u_approx[:,:,i]
+        # Uniform grainspeed (uniform and direction of the wind, but more realistic magnitude)
+        if p['method_grainspeed']=='duran_uniform':
+            if uw[0,0,i] > 0.:
+                us[:,:,i] = u0[:,:,i] * uws[0,0,i] / uw[0,0,i]
+                un[:,:,i] = u0[:,:,i] * uwn[0,0,i] / uw[0,0,i]
+                u[:,:,i] = u0[:,:,i]
+            
+        # Direct proportionality grainspeed to wind speed, but no slope effects
+        elif p['method_grainspeed']=='duran_flat':
+            us[:,:,i] = u0[:,:,i] * ets[:,:,i]
+            un[:,:,i] = u0[:,:,i] * etn[:,:,i]
+            u[:,:,i] = u0[:,:,i]
 
-        # When duran_full is chosen the full formulation (eq 1.61) will be solved
-        elif p['method_grainspeed'] == 'duran_full':
+        elif p['method_grainspeed']=='duran' or p['method_grainspeed']=='duran_full':
 
-            # Transform into complex numbers
-            u_approx_i = us_approx[:,:,i] + un_approx[:,:,i] * 1j
-            veff_i = ueff[:,:,i] * ets[:,:,i] + ueff[:,:,i] * etn[:,:,i] * 1j
-            dh_i = dhs[:,:,i] + dhn[:,:,i] * 1j
-            uf_i = uf[i]
-            alpha_i = alpha[i]
+            # Compute effective wind velocity, eq 1.60 p.42
+            ueff[:,:,i] = (uth[:,:,i] / kappa) * (np.log(z1[i] / z0[i]) + (z1[i]/zm[:,:,i]) * (ustar[:,:,i]/uth[:,:,i]-1)) 
 
-            # Solver van eq 1.61
-            def solve_u(u_i: complex, veff_i: complex, uf_i: float, alpha_i: float, dh_i: complex) -> complex:
-                return (veff_i - u_i) * np.abs(veff_i - u_i) / (uf_i ** 2) - u_i / (2 * alpha_i * np.abs(u_i)) - dh_i
-            u_i = optimize.newton(solve_u, u_approx_i, maxiter=20, tol=0.05, args=(veff_i, uf_i, alpha_i, dh_i)) 
+            # Compute grain speed: First approximation (eq 1.62) in case of gentle slopes
+            us_approx[:,:,i] = (ueff[:,:,i] - uf[i] / (np.sqrt(2. * alpha[i]) * Ax[:,:,i])) * ets[:,:,i] \
+                            - (np.sqrt(2*alpha[i]) * uf[i] / Ax[:,:,i]) * dhs[:,:,i]  
+            
+            un_approx[:,:,i] = (ueff[:,:,i] - uf[i] / (np.sqrt(2. * alpha[i]) * Ax[:,:,i])) * etn[:,:,i] \
+                            - (np.sqrt(2*alpha[i]) * uf[i] / Ax[:,:,i]) * dhn[:,:,i] 
+            
+            u_approx[:,:,i] = np.hypot(us_approx[:,:,i], un_approx[:,:,i])
 
-            # Transform back into components
-            us[:,:,i] = np.real(u_i)
-            un[:,:,i] = np.imag(u_i)
-            u[:,:,i]= np.abs(u_i)
+            # If 'regular' duran method is chosen, u_approx is the final solution
+            if p['method_grainspeed'] == 'duran':
+                us[:,:,i] = us_approx[:,:,i]
+                un[:,:,i] = un_approx[:,:,i]
+                u[:,:,i] = u_approx[:,:,i]
 
+            # When duran_full is chosen the full formulation (eq 1.61) will be solved
+            elif p['method_grainspeed'] == 'duran_full':
+
+                # Transform into complex numbers
+                u_approx_i = us_approx[:,:,i] + un_approx[:,:,i] * 1j
+                veff_i = ueff[:,:,i] * ets[:,:,i] + ueff[:,:,i] * etn[:,:,i] * 1j
+                dh_i = dhs[:,:,i] + dhn[:,:,i] * 1j
+                uf_i = uf[i]
+                alpha_i = alpha[i]
+
+                # Solver van eq 1.61
+                def solve_u(u_i: complex, veff_i: complex, uf_i: float, alpha_i: float, dh_i: complex) -> complex:
+                    return (veff_i - u_i) * np.abs(veff_i - u_i) / (uf_i ** 2) - u_i / (2 * alpha_i * np.abs(u_i)) - dh_i
+                u_i = optimize.newton(solve_u, u_approx_i, maxiter=20, tol=0.05, args=(veff_i, uf_i, alpha_i, dh_i)) 
+
+                # Transform back into components
+                us[:,:,i] = np.real(u_i)
+                un[:,:,i] = np.imag(u_i)
+                u[:,:,i]= np.abs(u_i)
+
+            else:
+                logger.error(f"Unknown method_grainspeed: {p['method_grainspeed']}")
         else:
-            logger.error('Grainspeed method not found!')
+            logger.error(f"Unknown method_grainspeed: {p['method_grainspeed']}")
         
         # For SedTRAILS: Set grainspeed to 0 whenever uth > ustar
         usST[:,:,i] = us[:,:,i]
@@ -312,7 +329,7 @@ def equilibrium(s, p):
         
         # u via grainvelocity:
         
-        if p['method_grainspeed']=='duran' or p['method_grainspeed']=='duran_full':
+        if p['method_grainspeed'] in ['duran', 'duran_full', 'duran_uniform', 'duran_flat']:
             #the syntax inside grainspeed needs to be cleaned up
             u0, us, un, u, usST, unST = duran_grainspeed(s,p)
             s['u0'] = u0
