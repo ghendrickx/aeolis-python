@@ -244,7 +244,7 @@ def solve_SS(self, alpha:float=0., beta:float=1.) -> dict:
     qs = Ct * s['us'] 
     qn = Ct * s['un'] 
     q = np.hypot(qs, qn)
-
+        
     return dict(Cu=Cu,
                 iters=iters,
                 dCt=dCt,
@@ -766,7 +766,7 @@ def sweep(Ct, Cu_bed, Cu_air, zeta, mass, dt, Ts, ds, dn, us, un, w,
         Cu_g = update_Cu(Ct_g, Cu_air_g, Cu_bed_g, zeta_g)
 
         # --- apply boundary conditions --------------------------------------
-        Ct_g, Cu_g = apply_boundary(Ct_g, Cu_g, uws, uwn,
+        Ct_g, Cu_g = apply_boundary(Ct_g, Cu_g, ufs_g, ufn_g,
                                 offshore_bc, onshore_bc, lateral_bc,
                                 offshore_flux, onshore_flux, lateral_flux)
 
@@ -797,6 +797,7 @@ def sweep(Ct, Cu_bed, Cu_air, zeta, mass, dt, Ts, ds, dn, us, un, w,
         ix_notconverged = np.abs(Ct_g - Ct_last) > max_error
         iters[ix_notconverged] = k
 
+
         # --- safety break to prevent infinite loops -------------------------
         if k > max_iter:
             max_diff = np.max(np.abs(Ct_g - Ct_last))
@@ -805,14 +806,8 @@ def sweep(Ct, Cu_bed, Cu_air, zeta, mass, dt, Ts, ds, dn, us, un, w,
             rel_cell_diff = 100 * max_diff / np.abs(Ct_last[ix_max_diff])
             logger.warning(f'Limit of k, max. dCt {max_diff:.3e}, rel. dCt total: {rel_total_diff:.1f}%, cell: {rel_cell_diff:.1f}%')
             
-            # when iteration not converged, set relevant results to zero
-            Ct_g[:] = 0.
-            Cu_g[:] = 0.
-            pickup_g[:] = 0.
-            pickup0_g[:] = 0.
-            
             break
-                
+
     # print(f'  Converged in {k} iterations.')
 
     # --- update Cu (final time for output) ----------------------------------
@@ -897,81 +892,81 @@ def update_weights(Ct, Cu, mass, bi):
     return w
 
 
-def apply_boundary(Ct, Cu, uws, uwn,
-                         offshore_bc, onshore_bc, lateral_bc,
-                         offshore_flux, onshore_flux, lateral_flux):
+def apply_boundary(Ct, Cu, ufs, ufn,
+                   offshore_bc, onshore_bc, lateral_bc,
+                   offshore_flux, onshore_flux, lateral_flux):
 
     # --- pair enforcement for s-direction circular --------------------------
     if (offshore_bc == 'circular') != (onshore_bc == 'circular'):
-        msg = "offshore_bc and onshore_bc must both be 'circular' (or both non-circular)."
+        msg = "offshore_bc/onshore_bc must both be 'circular' or non-circular."
         logger.error(msg)
         raise ValueError(msg)
 
-    # ---- s-direction ghosts (west/east) ------------------------------------
-    # circular: west ghost copies last physical col; east ghost copies first physical col
-    if (offshore_bc == 'circular'):
+    # --- s-direction ghosts (west/east) -------------------------------------
+    if offshore_bc == 'circular':
         Ct[:, 0,  :] = Ct[:, -2, :]
         Ct[:, -1, :] = Ct[:,  1, :]
         Cu[:, 0,  :] = Cu[:, -2, :]
         Cu[:, -1, :] = Cu[:,  1, :]
 
-    # non-circular: apply specified BCs
-    else: 
+    else:
+        # --- West Ghost (Index 0) -------------------------------------------
+        u_west = ufs[:, 1, :]
+        if offshore_bc == 'flux':
+            v_in = offshore_flux * Cu[:, 1, :]
+        else: # constant
+            v_in = Ct[:, 1, :]
+        v_out = Ct[:, 1, :]
 
-        # inflow from west (offshore)
-        if uws >= 0:  
-            if offshore_bc == 'flux':
-                Ct[:, 0, :] = offshore_flux * Cu[:, 1, :]
-            elif offshore_bc == 'constant':
-                Ct[:, 0, :] = Ct[:, 1, :]
-            else:
-                logger.error(f"Unknown offshore BC: {offshore_bc}")
-        else:
-            Ct[:, 0, :] = Ct[:, 1, :] # outflow: zero-gradient ghost
+        # Apply BC: Inflow if u >= 0, else Outflow (Zero Gradient)
+        Ct[:, 0, :] = np.where(u_west >= 0, v_in, v_out)
 
-        # inflow from east (onshore)
-        if uws < 0:   
-            if onshore_bc == 'flux':
-                Ct[:, -1, :] = onshore_flux * Cu[:, -2, :]
-            elif onshore_bc == 'constant':
-                Ct[:, -1, :] = Ct[:, -2, :]
-            else:
-                logger.error(f"Unknown onshore BC: {onshore_bc}")
-        else:
-            Ct[:, -1, :] = Ct[:, -2, :] # outflow: zero-gradient ghost
+        # --- East Ghost (Index -1) ------------------------------------------
+        u_east = ufs[:, -2, :]
+        if onshore_bc == 'flux':
+            v_in = onshore_flux * Cu[:, -2, :]
+        else: # constant
+            v_in = Ct[:, -2, :]
+        v_out = Ct[:, -2, :]
 
-        # set Cu ghosts to zero-gradient
+        # Apply BC: Inflow if u < 0, else Outflow
+        Ct[:, -1, :] = np.where(u_east < 0, v_in, v_out)
+
+        # Cu ghosts always zero-gradient
         Cu[:, 0, :] = Cu[:, 1, :]
         Cu[:, -1, :] = Cu[:, -2, :]
 
-    # ----- n-direction ghosts (south/north) ---------------------------------
+    # --- n-direction ghosts (south/north) -----------------------------------
     if lateral_bc == 'circular':
         Ct[0,  :, :] = Ct[-2, :, :]
         Ct[-1, :, :] = Ct[ 1, :, :]
         Cu[0,  :, :] = Cu[-2, :, :]
         Cu[-1, :, :] = Cu[ 1, :, :]
+
     else:
-        if uwn >= 0: # southern inflow
-            if lateral_bc == 'flux':
-                Ct[0, :, :] = lateral_flux * Cu[1, :, :]
-            elif lateral_bc == 'constant':
-                Ct[0, :, :] = Ct[1, :, :]
-            else:
-                logger.error(f"Unknown lateral BC: {lateral_bc}")
+        # --- South Ghost (Index 0) ------------------------------------------
+        u_south = ufn[1, :, :]
+        if lateral_bc == 'flux':
+            v_in = lateral_flux * Cu[1, :, :]
         else:
-            Ct[0, :, :] = Ct[1, :, :]
+            v_in = Ct[1, :, :]
+        v_out = Ct[1, :, :]
 
-        if uwn < 0: # northern inflow
-            if lateral_bc == 'flux':
-                Ct[-1, :, :] = lateral_flux * Cu[-2, :, :]
-            elif lateral_bc == 'constant':
-                Ct[-1, :, :] = Ct[-2, :, :]
-            else:
-                logger.error(f"Unknown lateral BC: {lateral_bc}")
+        # Inflow if u >= 0
+        Ct[0, :, :] = np.where(u_south >= 0, v_in, v_out)
+
+        # --- North Ghost (Index -1) -----------------------------------------
+        u_north = ufn[-2, :, :]
+        if lateral_bc == 'flux':
+            v_in = lateral_flux * Cu[-2, :, :]
         else:
-            Ct[-1, :, :] = Ct[-2, :, :]
+            v_in = Ct[-2, :, :]
+        v_out = Ct[-2, :, :]
 
-        # set Cu ghosts to zero-gradient
+        # Inflow if u < 0
+        Ct[-1, :, :] = np.where(u_north < 0, v_in, v_out)
+
+        # Cu ghosts always zero-gradient
         Cu[0, :, :] = Cu[1, :, :]
         Cu[-1, :, :] = Cu[-2, :, :]
 
@@ -982,23 +977,25 @@ def apply_boundary(Ct, Cu, uws, uwn,
 def _solve_quadrant1(Ct, Cu_air, Cu_bed, zeta, mass, pickup, pickup0, w,
                      dt, Ts, ds, dn, ufs, ufn, visited, quad, nf):
     ''' Sweep solver for quadrant 1 (u_n >=0, u_s >=0)'''
+    # South -> North, West -> East
 
-    # loop over all internal cells
     for n in range(1, Ct.shape[0] - 1):
         for s in range(1, Ct.shape[1] - 1):
+            
+            valid = True
+            for f in range(nf):
+                # Check if ANY fraction deviates from Q1 flow
+                if not ((ufn[n,s,f] >= 0) and (ufs[n,s,f] >= 0) and
+                        (ufn[n+1,s,f] >= 0) and (ufs[n,s+1,f] >= 0)):
+                    valid = False
+                    break
+            
+            if ((not visited[n,s]) and valid):
+                A = ds[n,s] * dn[n,s] 
 
-            # check if cell is unvisited and flow is into quadrant 1
-            if ((not visited[n, s]) and
-                (ufn[n,s,0] >= 0) and (ufs[n,s,0] >= 0) and
-                (ufn[n+1,s,0] >= 0) and (ufs[n,s+1,0] >= 0)):
-
-                A = ds[n,s] * dn[n,s] # cell area
-
-                # loop over all fractions
                 for f in range(nf):
-                    wf = w[n,s,f] # define weight
+                    wf = w[n,s,f]
 
-                    # compute a,b coefficients
                     if Cu_air[n,s,f] > 0 and Ct[n,s,f] > 0:
                         a = (1 - zeta[n,s]) * (Cu_air[n,s,f] - Cu_bed[n,s,f]) / Cu_air[n,s,f]
                         b = Cu_bed[n,s,f]
@@ -1006,48 +1003,40 @@ def _solve_quadrant1(Ct, Cu_air, Cu_bed, zeta, mass, pickup, pickup0, w,
                         a = 0.0
                         b = Cu_bed[n,s,f]
 
-                    # nomninator and denominator definitions
                     N = (Ct[n-1,s,f] * ufn[n,s,f] * ds[n,s] +
                         Ct[n, s-1,f] * ufs[n,s,f] * dn[n,s])
                     D = (ufn[n+1,s,f] * ds[n,s] +
                         ufs[n, s+1,f] * dn[n,s] + A / Ts)
                     
-                    # effective denominator adjustment
                     wa = wf * a
                     if wa > 0.999: wa = 0.999
                     
                     D_eff = D - wa * A / Ts
                     if D_eff < 1e-12: D_eff = 1e-12
                     
-                    # solve unlimited state
                     N_unlim = N + wf * b * A/Ts
                     Ct_new = N_unlim / D_eff
-                    Ct_new = max(Ct_new, 0.0)
+                    
+                    # Physical Clamp
+                    max_C = mass[n,s,0,f] / A + 1.0
+                    if Ct_new > max_C: Ct_new = max_C
+                    
                     Ct[n,s,f] = Ct_new
                     
-                    # calculate pickup 
                     Cu_local = b + a * Ct_new
                     p = (wf * Cu_local - Ct_new) * dt/Ts
-
-                    # copy of pickup before limiting
                     pickup0[n,s,f] = np.abs(p) 
 
-                    # check against available mass
                     if p > mass[n,s,0,f]:
                         p_lim = mass[n,s,0,f]
-                        
-                        # solve limited state
                         N_lim = N + p_lim * A/dt
                         Ct_new = N_lim / D_eff
                         Ct[n,s,f] = Ct_new
-
-                        # net pickup after deposition
                         deposition = (1.0 - wa) * Ct_new * dt / Ts
                         p = p_lim - deposition
 
                     pickup[n,s,f] = p
 
-                # mark cell as visited and assign quadrant
                 visited[n,s] = True
                 quad[n,s] = 1
 
@@ -1056,14 +1045,19 @@ def _solve_quadrant1(Ct, Cu_air, Cu_bed, zeta, mass, pickup, pickup0, w,
 def _solve_quadrant2(Ct, Cu_air, Cu_bed, zeta, mass, pickup, pickup0, w,
                      dt, Ts, ds, dn, ufs, ufn, visited, quad, nf):
     ''' Sweep solver for quadrant 2 (u_n >=0, u_s <=0) '''
+    # South -> North, East -> West
 
     for n in range(1, Ct.shape[0]-1):
         for s in range(Ct.shape[1]-2, 0, -1):
+            
+            valid = True
+            for f in range(nf):
+                if not ((ufn[n,s,f] >= 0) and (ufs[n,s,f] <= 0) and
+                        (ufn[n+1,s,f] >= 0) and (ufs[n,s+1,f] <= 0)):
+                    valid = False
+                    break
 
-            if ((not visited[n,s]) and
-                (ufn[n,s,0] >= 0) and (ufs[n,s,0] <= 0) and
-                (ufn[n+1,s,0] >= 0) and (ufs[n,s+1,0] <= 0)):
-
+            if ((not visited[n,s]) and valid):
                 A = ds[n,s] * dn[n,s]
 
                 for f in range(nf):
@@ -1084,27 +1078,27 @@ def _solve_quadrant2(Ct, Cu_air, Cu_bed, zeta, mass, pickup, pickup0, w,
 
                     wa = wf * a
                     if wa > 0.999: wa = 0.999
-                    
                     D_eff = D - wa * A / Ts
                     if D_eff < 1e-12: D_eff = 1e-12
                     
                     N_unlim = N + wf * b * A/Ts
                     Ct_new = N_unlim / D_eff
-                    Ct_new = max(Ct_new, 0.0)
+                    
+                    # Physical Clamp
+                    max_C = mass[n,s,0,f] / A + 1.0
+                    if Ct_new > max_C: Ct_new = max_C
+                    
                     Ct[n,s,f] = Ct_new
                     
                     Cu_local = b + a * Ct_new
                     p = (wf * Cu_local - Ct_new) * dt/Ts
-                    
                     pickup0[n,s,f] = np.abs(p)
                     
                     if p > mass[n,s,0,f]:
                         p_lim = mass[n,s,0,f]
-                        
                         N_lim = N + p_lim * A/dt
                         Ct_new = N_lim / D_eff
                         Ct[n,s,f] = Ct_new
-
                         deposition = (1.0 - wa) * Ct_new * dt / Ts
                         p = p_lim - deposition
 
@@ -1118,14 +1112,19 @@ def _solve_quadrant2(Ct, Cu_air, Cu_bed, zeta, mass, pickup, pickup0, w,
 def _solve_quadrant3(Ct, Cu_air, Cu_bed, zeta, mass, pickup, pickup0, w,
                      dt, Ts, ds, dn, ufs, ufn, visited, quad, nf):
     ''' Sweep solver for quadrant 3 (u_n <=0, u_s <=0) '''
+    # North -> South, East -> West
 
     for n in range(Ct.shape[0]-2, 0, -1):
         for s in range(Ct.shape[1]-2, 0, -1):
+            
+            valid = True
+            for f in range(nf):
+                if not ((ufn[n,s,f] <= 0) and (ufs[n,s,f] <= 0) and
+                        (ufn[n+1,s,f] <= 0) and (ufs[n,s+1,f] <= 0)):
+                    valid = False
+                    break
 
-            if ((not visited[n,s]) and
-                (ufn[n,s,0] <= 0) and (ufs[n,s,0] <= 0) and
-                (ufn[n+1,s,0] <= 0) and (ufs[n,s+1,0] <= 0)):
-
+            if ((not visited[n,s]) and valid):
                 A = ds[n,s] * dn[n,s]
 
                 for f in range(nf):
@@ -1138,7 +1137,6 @@ def _solve_quadrant3(Ct, Cu_air, Cu_bed, zeta, mass, pickup, pickup0, w,
                         a = 0.0
                         b = Cu_bed[n,s,f]
 
-                    # Note: Original code uses dn for ufn in Q3. Preserved for consistency.
                     N = (-Ct[n+1,s,f] * ufn[n+1,s,f] * dn[n,s] +
                         -Ct[n,s+1,f] * ufs[n,s+1,f] * dn[n,s])
 
@@ -1147,27 +1145,27 @@ def _solve_quadrant3(Ct, Cu_air, Cu_bed, zeta, mass, pickup, pickup0, w,
 
                     wa = wf * a
                     if wa > 0.999: wa = 0.999
-                    
                     D_eff = D - wa * A / Ts
                     if D_eff < 1e-12: D_eff = 1e-12
                     
                     N_unlim = N + wf * b * A/Ts
                     Ct_new = N_unlim / D_eff
-                    Ct_new = max(Ct_new, 0.0)
+                    
+                    # Physical Clamp
+                    max_C = mass[n,s,0,f] / A + 1.0
+                    if Ct_new > max_C: Ct_new = max_C
+                    
                     Ct[n,s,f] = Ct_new
                     
                     Cu_local = b + a * Ct_new
                     p = (wf * Cu_local - Ct_new) * dt/Ts
-                    
                     pickup0[n,s,f] = np.abs(p)
                     
                     if p > mass[n,s,0,f]:
                         p_lim = mass[n,s,0,f]
-                        
                         N_lim = N + p_lim * A/dt
                         Ct_new = N_lim / D_eff
                         Ct[n,s,f] = Ct_new
-
                         deposition = (1.0 - wa) * Ct_new * dt / Ts
                         p = p_lim - deposition
 
@@ -1181,14 +1179,19 @@ def _solve_quadrant3(Ct, Cu_air, Cu_bed, zeta, mass, pickup, pickup0, w,
 def _solve_quadrant4(Ct, Cu_air, Cu_bed, zeta, mass, pickup, pickup0, w,
                      dt, Ts, ds, dn, ufs, ufn, visited, quad, nf):
     ''' Sweep solver for quadrant 4 (u_n <=0, u_s >=0) '''
+    # North -> South, West -> East
 
     for n in range(Ct.shape[0]-2, 0, -1):
         for s in range(1, Ct.shape[1]-1):
+            
+            valid = True
+            for f in range(nf):
+                if not ((ufn[n,s,f] <= 0) and (ufs[n,s,f] >= 0) and
+                        (ufn[n+1,s,f] <= 0) and (ufs[n,s+1,f] >= 0)):
+                    valid = False
+                    break
 
-            if ((not visited[n,s]) and
-                (ufn[n,s,0] <= 0) and (ufs[n,s,0] >= 0) and
-                (ufn[n+1,s,0] <= 0) and (ufs[n,s+1,0] >= 0)):
-
+            if ((not visited[n,s]) and valid):
                 A = ds[n,s] * dn[n,s]
 
                 for f in range(nf):
@@ -1201,7 +1204,6 @@ def _solve_quadrant4(Ct, Cu_air, Cu_bed, zeta, mass, pickup, pickup0, w,
                         a = 0.0
                         b = Cu_bed[n,s,f]
 
-                    # Note: Original code uses dn for ufn in Q4. Preserved for consistency.
                     N = (Ct[n,s-1,f] * ufs[n,s,f] * dn[n,s] +
                         -Ct[n+1,s,f] * ufn[n+1,s,f] * dn[n,s])
 
@@ -1210,27 +1212,27 @@ def _solve_quadrant4(Ct, Cu_air, Cu_bed, zeta, mass, pickup, pickup0, w,
                     
                     wa = wf * a
                     if wa > 0.999: wa = 0.999
-                    
                     D_eff = D - wa * A / Ts
                     if D_eff < 1e-12: D_eff = 1e-12
                     
                     N_unlim = N + wf * b * A/Ts
                     Ct_new = N_unlim / D_eff
-                    Ct_new = max(Ct_new, 0.0)
+                    
+                    # Physical Clamp
+                    max_C = mass[n,s,0,f] / A + 1.0
+                    if Ct_new > max_C: Ct_new = max_C
+                    
                     Ct[n,s,f] = Ct_new
                     
                     Cu_local = b + a * Ct_new
                     p = (wf * Cu_local - Ct_new) * dt/Ts
-                    
                     pickup0[n,s,f] = np.abs(p)
                     
                     if p > mass[n,s,0,f]:
                         p_lim = mass[n,s,0,f]
-            
                         N_lim = N + p_lim * A/dt
                         Ct_new = N_lim / D_eff
                         Ct[n,s,f] = Ct_new
-
                         deposition = (1.0 - wa) * Ct_new * dt / Ts
                         p = p_lim - deposition
 
@@ -1272,10 +1274,10 @@ def _solve_generic_stencil(Ct, Cu_air, Cu_bed, zeta, mass, pickup, pickup0, w,
                     )
 
                     D = A/Ts
-                    if ufn[n,s,0] <= 0: D += -ufn[n,s,f] * dn[n,s]
-                    if ufs[n,s,0] <= 0: D += -ufs[n,s,f] * dn[n,s]
-                    if ufn[n+1,s,0] > 0: D += ufn[n+1,s,f] * ds[n,s]
-                    if ufs[n,s+1,0] > 0: D += ufs[n,s+1,f] * dn[n,s]
+                    if ufn[n,s,f] <= 0: D += -ufn[n,s,f] * dn[n,s]
+                    if ufs[n,s,f] <= 0: D += -ufs[n,s,f] * dn[n,s]
+                    if ufn[n+1,s,f] > 0: D += ufn[n+1,s,f] * ds[n,s]
+                    if ufs[n,s+1,f] > 0: D += ufs[n,s+1,f] * dn[n,s]
 
                     wa = wf * a
                     if wa > 0.999: wa = 0.999
