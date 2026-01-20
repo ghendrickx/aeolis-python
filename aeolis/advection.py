@@ -28,7 +28,9 @@ from __future__ import absolute_import, division
 
 import logging
 import numpy as np
+import os
 from matplotlib import pyplot as plt
+import matplotlib.colors as colors
 import scipy.sparse.linalg
 from scipy import ndimage, misc
 from numba import njit
@@ -234,11 +236,12 @@ def solve_SS(self, alpha:float=0., beta:float=1.) -> dict:
     # iterate to steady state
     Cu, Ct, pickup, pickup0, w, dCt, iters = sweep(Ct, s['CuBed'].copy(), s['CuAir'].copy(), 
                         s['zeta'].copy(), s['mass'].copy(), 
-                        self.dt, p['T'], 
+                        self.dt, p['T'], p['_time'], 
                         s['ds'], s['dn'], s['us'], s['un'], w,
                         p['boundary_offshore'], p['boundary_onshore'], p['boundary_lateral'],
                         p['offshore_flux'], p['onshore_flux'], p['lateral_flux'],
-                        s['uws'][0,0], s['uwn'][0,0], p['max_iter'], p['max_error'], p['bi'])
+                        p['max_iter'], p['max_error'], p['bi'],
+                        do_plot=p['solver_plot'], do_print=p['solver_print'])
 
     # compute pickup
     qs = Ct * s['us'] 
@@ -694,10 +697,11 @@ def solve_EB(self, alpha:float=.5, beta:float=1.) -> dict:
 # This function acts as an orchestrator, delegating work to Numba-compiled helper functions.
 # Decorating the orchestrator itself with njit provides no performance benefit,
 # since most of the computation is already handled by optimized Numba functions.
-def sweep(Ct, Cu_bed, Cu_air, zeta, mass, dt, Ts, ds, dn, us, un, w, 
+def sweep(Ct, Cu_bed, Cu_air, zeta, mass, dt, Ts, t_current, ds, dn, us, un, w, 
           offshore_bc, onshore_bc, lateral_bc,
           offshore_flux, onshore_flux, lateral_flux,
-          uws, uwn, max_iter, max_error, bi):
+          max_iter, max_error, bi,
+          do_print=True, do_plot=False):
 
     # --- adding ghost cells -------------------------------------------------
     (Ct_g, Cu_air_g, Cu_bed_g, zeta_g, mass_g,
@@ -756,6 +760,9 @@ def sweep(Ct, Cu_bed, Cu_air, zeta, mass, dt, Ts, ds, dn, us, un, w,
     for i in range(nf):
         Ct_g[:,:,i] = Cu_air_g[:,:,i] * zeta_g + Cu_bed_g[:,:,i] * (1. - zeta_g)
 
+    # Storage for convergence history
+    dCt_max_history = []
+
     # --- start iteration to steady state ------------------------------------
     iters = np.zeros_like(Cu_g, dtype=np.int32)
     Ct_last = Ct_g.copy()
@@ -797,18 +804,18 @@ def sweep(Ct, Cu_bed, Cu_air, zeta, mass, dt, Ts, ds, dn, us, un, w,
         ix_notconverged = np.abs(Ct_g - Ct_last) > max_error
         iters[ix_notconverged] = k
 
+        # --- store max. difference for convergence monitoring ---------------
+        diff = Ct_g - Ct_last
+        idx = np.unravel_index(np.argmax(np.abs(diff)), diff.shape)
+        dCt_max_history.append(diff[idx])
 
         # --- safety break to prevent infinite loops -------------------------
         if k > max_iter:
-            max_diff = np.max(np.abs(Ct_g - Ct_last))
-            ix_max_diff = np.unravel_index(np.argmax(np.abs(Ct_g - Ct_last)), Ct_g.shape)
-            rel_total_diff = 100 * np.sum(np.abs(Ct_g - Ct_last)) / np.sum(np.abs(Ct_last))
-            rel_cell_diff = 100 * max_diff / np.abs(Ct_last[ix_max_diff])
-            logger.warning(f'Limit of k, max. dCt {max_diff:.3e}, rel. dCt total: {rel_total_diff:.1f}%, cell: {rel_cell_diff:.1f}%')
-            
+            if do_print: # Printing (default True)
+                print_convergence(k, diff, Ct_last)
+            if do_plot: # Plotting (default False)
+                plot_convergence_debug(t_current, Cu_g, Ct_g, diff, iters, dCt_max_history)
             break
-
-    # print(f'  Converged in {k} iterations.')
 
     # --- update Cu (final time for output) ----------------------------------
     Cu_g = update_Cu(Ct_g, Cu_air_g, Cu_bed_g, zeta_g)
@@ -818,6 +825,7 @@ def sweep(Ct, Cu_bed, Cu_air, zeta, mass, dt, Ts, ds, dn, us, un, w,
     (Cu, Ct, pickup, pickup0, w, dCt, iters, ufs, ufn) = [
         _deghost(a) for a in (Cu_g, Ct_g, pickup_g, pickup0_g, w_g, dCt, iters, ufs_g, ufn_g)]
 
+     # print(f'  Converged in {k} iterations.')
     return Cu, Ct, pickup, pickup0, w, dCt, iters
 
 
@@ -1360,3 +1368,91 @@ def _ghostify(arr, offshore_bc=None, onshore_bc=None, lateral_bc=None):
 def _deghost(arr_g):
     """Remove 1-cell halo."""
     return arr_g[1:-1, 1:-1, ...]
+
+
+def print_convergence(k, diff, Ct_last):
+    """
+    Checks if iteration limit is reached and prints convergence statistics.
+    Returns True if the loop should break (safety stop).
+    """
+
+    # Calculate diagnostics
+    max_diff = np.max(np.abs(diff))
+    ix_max = np.unravel_index(np.argmax(np.abs(diff)), diff.shape)
+    
+    # Avoid division by zero in relative diffs
+    sum_Ct = np.sum(np.abs(Ct_last))
+    val_at_max = np.abs(Ct_last[ix_max])
+    
+    rel_total = 100 * np.sum(np.abs(diff)) / sum_Ct if sum_Ct > 0 else 0.0
+    rel_cell  = 100 * max_diff / val_at_max if val_at_max > 0 else 0.0
+    
+    logger.warning(f'Limit of k={k}, max. dCt {max_diff:.3e}, '
+                    f'rel. dCt total: {rel_total:.1f}%, cell: {rel_cell:.1f}%')
+
+
+def plot_convergence_debug(t_current, Cu, Ct, diff, iters, history):
+    """
+    Generates a debug dashboard for the advection solver.
+    """
+
+    history = np.array(history)
+
+    # --- 1. Setup ---
+    plot_dir = 'debug_plots'
+    if not os.path.exists(plot_dir):
+        try: os.makedirs(plot_dir)
+        except OSError: pass
+
+    # Use Fraction 0 for maps
+    f = 0 
+    
+    # Helper for consistent plotting
+    def _pcolor(ax, data, title, cmap='viridis'):
+        # Slice [1:-1] to show physical domain only (remove ghosts)
+        im = ax.pcolormesh(data[1:-1, 1:-1], cmap=cmap, vmin=0., vmax=np.max(data))
+        ax.set_title(title)
+        ax.set_aspect('equal')
+        plt.colorbar(im, ax=ax)
+
+    # --- 2. Create Figure ---
+    fig = plt.figure(figsize=(18, 10))
+    gs = fig.add_gridspec(2, 3)
+
+    # Top Row: State
+    _pcolor(fig.add_subplot(gs[0,0]), Cu[:,:,f], f'Cu (Equilibrium) F{f}')
+    _pcolor(fig.add_subplot(gs[0,1]), Ct[:,:,f], f'Ct (Actual) F{f}', cmap='plasma')
+
+    # Top Right: History (log scale - positive values only)
+    ax_hist = fig.add_subplot(gs[0,2])
+    ax_hist.semilogy(np.abs(history), '.-', lw=1)
+    ax_hist.set_title('Convergence History (Abs. Max. dCt)')
+    ax_hist.set_xlabel('Iteration')
+    ax_hist.grid(True, which="both", alpha=0.5)
+
+    # Bottom right: History (linear scale - positive and negative)
+    ax_hist_lin = fig.add_subplot(gs[1,2])
+    ax_hist_lin.plot(history, '.-', lw=1)
+    ax_hist_lin.set_title('Convergence History (Max. dCt)')
+    ax_hist_lin.set_xlabel('Iteration')
+    ax_hist_lin.axhline(0.0, color='k', lw=0.8, ls='--')
+    ax_hist_lin.grid(True, which="both", alpha=0.5)
+
+    # Bottom Row: Diagnostics
+    # Diverging colormap for dCt
+    mx = np.max(np.abs(diff[:,:,f]))
+    norm = colors.Normalize(vmin=-mx, vmax=mx)
+    _pcolor(fig.add_subplot(gs[1,0]), diff[:,:,f], f'dCt (Change) F{f}', cmap='RdBu_r')
+    
+    # Iteration count map
+    _pcolor(fig.add_subplot(gs[1,1]), iters[:,:,f], f'Iterations F{f}', cmap='inferno')
+
+    # --- 3. Save ---
+    t_str = f"{t_current:.0f}"
+    fname = os.path.join(plot_dir, f"advection_debug_t{t_str}.png")
+    
+    plt.tight_layout()
+    plt.savefig(fname, dpi=150)
+    plt.close(fig)
+    
+    print(f"Debug plot saved: {fname}")
