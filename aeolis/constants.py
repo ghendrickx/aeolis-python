@@ -389,8 +389,11 @@ DEFAULT_CONFIG = {
     'Ck'                            : 2.78,               # [-] Constant in kawamura formulation for equilibrium sediment concentration
     'Cl'                            : 6.7,                # [-] Constant in lettau formulation for equilibrium sediment concentration
     'Cdk'                           : 5.,                 # [-] Constant in DK formulation for equilibrium sediment concentration
-    'sigma'                         : 4.2,                # [-] Ratio between basal area and frontal area of roughness elements
-    'beta'                          : 130.,               # [-] Ratio between drag coefficient of roughness elements and bare surface
+
+    # --- Other sediment parameters --- #
+    'sigma_shelter'                 : 4.2,                # [-] Ratio between basal area and frontal area of roughness elements
+    'beta_shelter'                  : 130.,               # [-] Ratio between drag coefficient of roughness elements and bare surface
+    'm_shelter'                     : 0.5,                # [-] Exponent in sheltering formulation
     'bi'                            : 1.,                 # [-] Bed interaction factor for sediment fractions
 
     # --- Bed update parameters --- #

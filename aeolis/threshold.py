@@ -391,7 +391,7 @@ def compute_sheltering(s, p):
     gd /= mass.sum(axis=-1)
 
     # compute inverse of shear stress ratio
-    Rti = np.sqrt((1. - p['m'] * gd) * (1. + p['m'] * p['beta'] / p['sigma'] * gd))
+    Rti = np.sqrt((1. - p['m_shelter'] * gd) * (1. + p['m_shelter'] * p['beta_shelter'] / p['sigma_shelter'] * gd))
     s['Rti'] = Rti
 
     # modify shear velocity threshold
