@@ -224,6 +224,12 @@ class WindShear:
             z_origin = gc['z'][:].copy()
             zsep = compute_separation(p, gc['z'], gc['dx'])
             gc['z'] = np.maximum(gc['z'], zsep)
+
+        # Taper downstream boundary to match inlet to prevent FFT ringing for ANY bed shape
+        n = int(self.buffer_width / self.cgrid['dx'])
+        if n > 0:
+            w = 0.5 * (1 + np.cos(np.linspace(0, np.pi, n)))
+            gc['z'][:, -n:] = gc['z'][:, -n:] * w + gc['z'][:, :1] * (1 - w)
                     
         # Compute wind shear stresses on computational grid 
         self.compute_shear(u0, nfilter=(1., 2.))
