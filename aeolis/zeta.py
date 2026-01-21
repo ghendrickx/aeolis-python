@@ -44,7 +44,7 @@ def compute_zeta(s, p):
         if p['th_sheltering']:
             s = zeta_from_sheltering(s, p)
         else:
-            logger.warning("Zeta sheltering requested but threshold not set.")
+            logger.warning("Zeta sheltering requested but sheltering threshold not set.")
 
     if p['process_vegetation']: # and p['method_vegetation'] == 'grass':
         s = zeta_from_vegetation(s, p)

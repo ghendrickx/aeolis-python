@@ -346,7 +346,7 @@ class AeoLiS(IBmi):
         self.l = self.s.copy()
         self.l['zb'] = self.s['zb'].copy()
         self.l['dzbavg'] = self.s['dzbavg'].copy()
-        
+
         # interpolate wind time series
         self.s = aeolis.wind.interpolate(self.s, self.p, self.t)  
     
@@ -409,12 +409,13 @@ class AeoLiS(IBmi):
         # avalanching
         self.s = aeolis.avalanching.angele_of_repose(self.s, self.p)
         self.s = aeolis.avalanching.avalanche(self.s, self.p)
-        
+
         # reset original bed in marine zone (wet)
         self.s = aeolis.bed.wet_bed_reset(self.s, self.p)
 
-        # calculate average bed level change over time
-        self.s = aeolis.bed.average_change(self.l, self.s, self.p)
+        # calculate average bed level change over time (old method)
+        if self.p['process_vegetation'] and self.p['method_vegetation'] == 'duran':
+            self.s = aeolis.bed.average_change(self.l, self.s, self.p)
 
         # compute dune erosion
         if self.p['process_dune_erosion']:
@@ -734,7 +735,7 @@ class AeoLiS(IBmi):
             # dt_pickup = self.dt_prev * 0.7 / np.max(r_pickup) # 0.7 factor to be conservative
             
             # limit dt based pickup rate to max_bedlevel_change
-            dt_zb = self.dt_prev * self.p['max_bedlevel_change'] / np.max(self.s['dzb'])
+            dt_zb = self.dt_prev * self.p['max_bedlevel_change'] / np.max(np.abs(self.s['dzb']))
             self.dt = np.min([self.dt, dt_zb])#, dt_pickup])
             
         self.p['dt_opt'] = self.dt

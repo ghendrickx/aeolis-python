@@ -43,7 +43,7 @@ def initialize(s, p):
                           + (s['y_vsub'][0, 1] - s['y_vsub'][0, 0])**2)
     dx_main = np.sqrt((s['x'][0, 1] - s['x'][0, 0])**2 
                       + (s['y'][0, 1] - s['y'][0, 0])**2)
-    print(f"Subgrid resolution reduced from {dx_main:.3f} m to {p['dx_veg']:.3f} m.")
+    print(f"Grass.py: Vegetation subgrid created with a resolution of {p['dx_veg']:.3f} m (main grid: {dx_main:.3f} m, factor: {f})")
 
     # --- One-time lift: main grid → vegetation subgrid ----------------------
     s['Nt_vsub']   = gutils.expand_to_subgrid(s['Nt'], f)
@@ -78,6 +78,7 @@ def update(s, p):
 
     # --- Burial smoothing (main grid → subgrid, diagnostic → prognostic) ----
     dzb_main = gutils.smooth_burial(s, p)
+    s['dzbavg'][:] = dzb_main
     dzb_vsub = gutils.expand_to_subgrid_linear(dzb_main[:,:,None], p['veg_res_factor'])[:,:,0]
 
     # # --- Expand main-grid state variables to subgrid (for flooding) ---------

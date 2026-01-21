@@ -226,9 +226,6 @@ def smooth_burial(s, p):
     T_rat = (t - t0) / T
     if T_rat < 1.0:
         dzb_smooth *= T_rat
-
-    # Store for output
-    s['dzbavg'] = dzb_smooth
     
     return dzb_smooth
 
