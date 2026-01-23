@@ -153,6 +153,8 @@ def write_configfile(configfile, p=None):
 
     if p is None:
         p = DEFAULT_CONFIG.copy()
+    else:
+        p = {**DEFAULT_CONFIG, **p}
 
     # Parse constants.py to extract section headers, order, and comments
     import aeolis.constants
@@ -238,10 +240,6 @@ def write_configfile(configfile, p=None):
             # Write each key in this section
             for key in section_keys:
                 value = p[key]
-
-                # Skip this key if its value matches the default
-                if key in DEFAULT_CONFIG and np.all(value == DEFAULT_CONFIG[key]) :
-                    continue
                 
                 comment = comments.get(key, '')
                 
