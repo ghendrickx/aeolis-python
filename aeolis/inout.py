@@ -539,7 +539,7 @@ def visualize_timeseries(p, t):
 
     # Read the user input (waves)
     
-    if np.shape(p['wave_file'])[1]== 3:
+    if p['wave_file'] is not None and np.shape(p['wave_file'])[1]== 3:
         w_t = p['wave_file'][:,0]
         w_Hs = p['wave_file'][:,1]
         w_Tp = p['wave_file'][:,2]
@@ -549,7 +549,7 @@ def visualize_timeseries(p, t):
         axs[3].set_title('Wave period, Tp (sec)')
 
     # Read the user input (tide)
-    if np.shape(p['tide_file'])[1]==2:
+    if p['tide_file'] is not None and np.shape(p['tide_file'])[1]==2:
         T_t = p['tide_file'][:,0]
         T_zs = p['tide_file'][:,1]
         axs[4].plot(T_t, T_zs, 'k')
