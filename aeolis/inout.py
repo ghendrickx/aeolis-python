@@ -150,7 +150,7 @@ def write_configfile(configfile, p=None):
     read_configfile
 
     '''
-
+    # update default configuration
     if p is None:
         p = DEFAULT_CONFIG.copy()
     else:
