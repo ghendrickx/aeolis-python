@@ -348,14 +348,6 @@ DEFAULT_CONFIG = {
     'solver_plot'                   : False,              # Boolean to plot convergence behaviour of the solver when max iterations is reached
     'solver_print'                  : True,               # Boolean to print convergence behaviour of the solver when max iterations is reached
 
-    # --- Boundary conditions -----------------------------------------------------------------------------------------
-    'boundary_lateral'              : 'constant',         # Name of lateral boundary conditions (circular, flux or constant)
-    'boundary_offshore'             : 'constant',         # Name of offshore boundary conditions (circular, flux or constant)
-    'boundary_onshore'              : 'constant',         # Name of onshore boundary conditions (circular, flux or constant)
-    'offshore_flux'                 : 1.,                 # [-] Factor to determine offshore boundary flux as a function of Cu (= 1 for saturated, = 0 for noflux)
-    'onshore_flux'                  : 1.,                 # [-] Factor to determine onshore boundary flux as a function of Cu (= 1 for saturated, = 0 for noflux)
-    'lateral_flux'                  : 1.,                 # [-] Factor to determine lateral boundary flux as a function of Cu (= 1 for saturated, = 0 for noflux)
-
     # --- General physical constants and model parameters -------------------------------------------------------------
     'method_roughness'              : 'constant',         # Name of method to compute the roughness height z0, note that here the z0 = k
     'g'                             : 9.81,               # [m/s^2] Gravitational constant
