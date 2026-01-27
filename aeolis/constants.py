@@ -461,6 +461,7 @@ DEFAULT_CONFIG = {
     # --- Bed interaction in advection equation (new process) --- #
     'zeta_base'                     : 1.0,                # [-] Base value for bed interaction parameter in advection equation 
     'zeta_sheltering'               : False,              # [-] Include sheltering effect of roughness elements on bed interaction parameter
+    'zeta_grainspeed'               : False,              # [-] Include effect of the bed interaction parameter on the grainspeed
     'p_zeta_moist'                  : 0.8,                # [-] Exponent parameter for computing zeta from moisture
     'a_weibull'                     : 1.0,                # [-] Shape parameter k of Weibull function for bed interaction parameter zeta
     'b_weibull'                     : 0.5,                # [m] Scale parameter lambda of Weibull function for bed interaction parameter zeta
