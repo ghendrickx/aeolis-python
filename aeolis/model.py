@@ -346,7 +346,7 @@ class AeoLiS(IBmi):
         self.l = self.s.copy()
         self.l['zb'] = self.s['zb'].copy()
         self.l['dzbavg'] = self.s['dzbavg'].copy()
-
+        
         # interpolate wind time series
         self.s = aeolis.wind.interpolate(self.s, self.p, self.t)  
     
@@ -385,12 +385,12 @@ class AeoLiS(IBmi):
         # if np.sum(self.s['uw']) != 0:
         self.s = aeolis.threshold.compute(self.s, self.p)
 
-        # compute saltation velocity and equilibrium transport
-        self.s = aeolis.transport.equilibrium(self.s, self.p)
-
         # compute bed-interaction parameter zeta
         if self.p['process_bedinteraction']:
             self.s = aeolis.zeta.compute_zeta(self.s, self.p)
+
+        # compute saltation velocity and equilibrium transport
+        self.s = aeolis.transport.equilibrium(self.s, self.p)
 
         # compute instantaneous transport
         if self.p['solver'] == 'steadystate': 
@@ -409,7 +409,7 @@ class AeoLiS(IBmi):
         # avalanching
         self.s = aeolis.avalanching.angele_of_repose(self.s, self.p)
         self.s = aeolis.avalanching.avalanche(self.s, self.p)
-
+        
         # reset original bed in marine zone (wet)
         self.s = aeolis.bed.wet_bed_reset(self.s, self.p)
 

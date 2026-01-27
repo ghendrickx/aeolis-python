@@ -40,7 +40,7 @@ from aeolis.utils import *
 # initialize logger
 logger = logging.getLogger(__name__)
 
-def duran_grainspeed(s, p):
+def duran_grainspeed(s, p, mode='normal'):
     '''Compute grain speed according to Duran 2007 (p. 42)
 
     Parameters
@@ -67,13 +67,15 @@ def duran_grainspeed(s, p):
     ny = p['ny']
     
     # Shear velocity and threshold
-    # ustar = s['ustar']
-    # ustars = s['ustars']
-    # ustarn = s['ustarn']
+    if mode == 'normal':
+        ustar = s['ustarAir']
+        ustars = s['ustarsAir']
+        ustarn = s['ustarnAir']
+    if mode == 'bed':
+        ustar = s['ustar']
+        ustars = s['ustars']
+        ustarn = s['ustarn']
     # ustar0 = s['ustar0']
-    ustar = s['ustarAir']
-    ustars = s['ustarsAir']
-    ustarn = s['ustarnAir']
     ustar0 = s['ustar0']
     uth = s['uth0'] # uth0 or uth???
     uth0 = s['uth0'] 
@@ -240,6 +242,13 @@ def duran_grainspeed(s, p):
         else:
             logger.error(f"Unknown method_grainspeed: {p['method_grainspeed']}")
         
+        # Hard cap on maximum grainspeed to avoid instabilities
+        ucap = 5 # m/s
+        ix_ucap = (u[:,:,i] > ucap)
+        us[ix_ucap,i] = us[ix_ucap,i] * ucap / u[ix_ucap,i]
+        un[ix_ucap,i] = un[ix_ucap,i] * ucap / u[ix_ucap,i]
+        u[ix_ucap,i]  = ucap
+
         # For SedTRAILS: Set grainspeed to 0 whenever uth > ustar
         usST[:,:,i] = us[:,:,i]
         unST[:,:,i] = un[:,:,i]
@@ -331,7 +340,16 @@ def equilibrium(s, p):
         
         if p['method_grainspeed'] in ['duran', 'duran_full', 'duran_uniform', 'duran_flat']:
             #the syntax inside grainspeed needs to be cleaned up
-            u0, us, un, u, usST, unST = duran_grainspeed(s,p)
+            u0, us, un, u, usST, unST = duran_grainspeed(s,p, mode='normal')
+            
+            if p['zeta_grainspeed']:
+                u0_bed, us_bed, un_bed, u_bed, usST_bed, unST_bed = duran_grainspeed(s,p, mode='bed')
+                zeta = s['zeta'][:,:,np.newaxis].repeat(nf, axis=2)
+                u0 = u0_bed * zeta + u0 * (1 - zeta)
+                us = us_bed * zeta + us * (1 - zeta)
+                un = un_bed * zeta + un * (1 - zeta)
+                u  = u_bed  * zeta + u  * (1 - zeta)
+
             s['u0'] = u0
             s['us'] = us
             s['un'] = un
