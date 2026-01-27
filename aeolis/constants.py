@@ -432,6 +432,7 @@ DEFAULT_CONFIG = {
     # --- Avalanching parameters --- #
     'theta_dyn'                     : 33.,                # [degrees] Initial Dynamic angle of repose, critical dynamic slope for avalanching
     'theta_stat'                    : 34.,                # [degrees] Initial Static angle of repose, critical static slope for avalanching
+    'theta_dry'                     : 33.,                # [degrees] Angle of repose for dry sand (only used in compute_bedslope threshold)
     'max_iter_ava'                  : 1000,               # [-] Maximum number of iterations at which to quit iterative solution in avalanching calculation
 
     # --- Hydro and waves --- #

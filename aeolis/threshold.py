@@ -138,7 +138,11 @@ def compute_grainsize(s, p):
 
 
 def compute_bedslope(s, p):
-    '''Modify wind velocity threshold based on bed slopes following Dyer (1986)
+    '''Modify wind velocity threshold based on bed slopes following Iversen (1999).
+    
+    If the dynamic angle of repose (theta_dyn) is larger than the dry sand angle 
+    (theta_dry), a singularity is introduced to prevent transport up steep slopes 
+    (e.g. cliffs, wet sand, roots).
 
     Parameters
     ----------
@@ -146,6 +150,8 @@ def compute_bedslope(s, p):
         Spatial grids
     p : dict
         Model configuration parameters
+        - theta_dyn: Maximum slope angle (avalanche limit)
+        - theta_dry: Standard dry sand angle (gravity physics base)
 
     Returns
     -------
@@ -153,6 +159,60 @@ def compute_bedslope(s, p):
         Spatial grids
 
     '''
+
+    # Load Parameters
+    theta_dyn_deg = p['theta_dyn'] # theta_dyn is the hard limit (avalanche angle)
+    theta_dry_deg = p['theta_dry'] # theta_dry defaults to theta_dyn if not specified
+
+    tan_dyn = np.tan(np.deg2rad(theta_dyn_deg))
+    tan_dry = np.tan(np.deg2rad(theta_dry_deg))
+
+    # Compute slopes
+    x, y, z = s['x'][:], s['y'][:], s['zb'][:]
+    dzdx, dzdy = np.zeros(z.shape), np.zeros(z.shape)
+
+    dzdx[:,1:-1] = (z[:,2:] - z[:,:-2]) / (x[:,2:] - x[:,:-2])
+    if p['ny'] > 0:
+        dzdy[1:-1,:] = (z[:-2,:] - z[2:,:]) / (y[:-2,:] - y[2:,:])
+    dzdx[:,0] = dzdx[:,1]; dzdx[:,-1] = dzdx[:,-2]
+    if p['ny'] > 0:
+        dzdy[0,:] = dzdy[1,:]; dzdy[-1,:] = dzdy[-2,:]
+
+    # Project Slope onto Wind Direction
+    u_mag = np.hypot(s['ustars'], s['ustarn'])
+    mask_wind = u_mag > 1e-6 
+    cos_wind, sin_wind = np.zeros(z.shape), np.zeros(z.shape)
+    cos_wind[mask_wind] = s['ustars'][mask_wind] / u_mag[mask_wind]
+    sin_wind[mask_wind] = s['ustarn'][mask_wind] / u_mag[mask_wind]
+
+    # Calculate slope in wind direction
+    tan_theta = (dzdx * cos_wind) + (dzdy * sin_wind)
+    
+    # Compute Base Iversen Factor
+    # Uses theta_dry to determine the standard gravity impact
+    theta_rad = np.arctan(tan_theta)
+    M = np.cos(theta_rad) + np.sin(theta_rad) / tan_dry
+    factor = np.sqrt(np.maximum(M, 0.))
+
+    # Apply Extreme Cliff Effect (Singularity)
+    # Only if the domain allows slopes steeper than dry sand (dyn > dry)
+    if theta_dyn_deg > theta_dry_deg:
+        
+        # Region between dry physics and hard limit
+        mask_ramp = (tan_theta > tan_dry) & (tan_theta < tan_dyn)
+        
+        # Ramp factor: 1.0 at dry angle -> Infinity at dyn angle
+        ramp = (tan_dyn - tan_dry) / (tan_dyn - tan_theta[mask_ramp])
+        factor[mask_ramp] *= np.sqrt(ramp)
+        
+        # Hard stop for cliffs (slopes >= theta_dyn)
+        factor[tan_theta >= tan_dyn] = np.inf
+
+    # Apply to threshold
+    if s['uth'].ndim == 3:
+        s['uth'] *= factor[:,:,np.newaxis]
+    else:
+        s['uth'] *= factor
 
     return s
 
