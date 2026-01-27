@@ -392,6 +392,8 @@ def parse_value(val, parse_files=True, force_list=False):
         return int(val)
     elif re.match(r'^-?[\d.]+$', val):
         return float(val)
+    elif re.match(r'^-?\d+(\.\d+)?[eE][+-]?\d+$', val):  # scientific notation
+        return float(val)
     elif re.match('None', val):
         return None
     elif os.path.isfile(val) and parse_files:
