@@ -97,6 +97,7 @@ def initialize(outputfile, outputvars, s, p, dimensions):
         nc.createDimension('nv2', 4)
         nc.createDimension('layers', p['nlayers'])
         nc.createDimension('fractions', p['nfractions'])
+        nc.createDimension('species', p['nspecies'])
             
         # add global attributes
         # see http://www.unidata.ucar.edu/software/thredds/current/netcdf-java/formats/DataDiscoveryAttConvention.html
@@ -194,6 +195,12 @@ def initialize(outputfile, outputvars, s, p, dimensions):
         nc.variables['fractions'].valid_min = 0
         nc.variables['fractions'].valid_max = np.inf
         
+        nc.createVariable('species', 'float32', (u'species',))
+        nc.variables['species'].long_name = 'vegetation species'
+        nc.variables['species'].units = '1'
+        nc.variables['species'].valid_min = 0
+        nc.variables['species'].valid_max = np.inf
+
         nc.createVariable('lat', 'float32', (u'n', u's'))
         nc.variables['lat'].long_name = 'latitude'
         nc.variables['lat'].standard_name = 'latitude'
@@ -304,8 +311,12 @@ def initialize(outputfile, outputvars, s, p, dimensions):
             nc.variables['x'][:,:] = s['x']
             nc.variables['y'][:,:] = s['y']
 
+        nc.variables['x_vsub'] = s['x_vsub']
+        nc.variables['y_vsub'] = s['y_vsub']
+
         nc.variables['layers'][:] = np.arange(p['nlayers'])
         nc.variables['fractions'][:] = p['grain_size']
+        nc.variables['species'][:] = p['G_h']
 
         nc.variables['lat'][:,:] = 0.
         nc.variables['lon'][:,:] = 0.

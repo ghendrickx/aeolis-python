@@ -391,7 +391,7 @@ def compute_sheltering(s, p):
     gd /= mass.sum(axis=-1)
 
     # compute inverse of shear stress ratio
-    Rti = np.sqrt((1. - p['m'] * gd) * (1. + p['m'] * p['beta'] / p['sigma'] * gd))
+    Rti = np.sqrt((1. - p['m_shelter'] * gd) * (1. + p['m_shelter'] * p['beta_shelter'] / p['sigma_shelter'] * gd))
     s['Rti'] = Rti
 
     # modify shear velocity threshold
@@ -424,7 +424,7 @@ def non_erodible(s,p):
     thuthlyr = 0.01
     ix = (s['zb'] <= s['zne'] + thuthlyr)
     
-    # Smooth method
+    # # Smooth method
     # dzne = np.maximum( ( s['zne'] + thuthlyr - s['zb']) / thuthlyr, 0. )
     # for i in range(nf):
     #     duth = np.maximum( 2.* s['ustar'] - s['uth'][:,:,i], 0)
@@ -432,8 +432,7 @@ def non_erodible(s,p):
     
     # Hard method
     for i in range(nf):
-        s['uth'][ix,i] = np.inf     
-   
-    
+        s['uth'][ix,i] = np.inf   
+
     return s    
 

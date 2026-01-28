@@ -255,14 +255,16 @@ def print_value(val, fill='<novalue>'):
 
     if isiterable(val):
         return ' '.join([print_value(x) for x in val])
-    elif val is None:
+    elif val is None or val == '':
         return fill
     elif isinstance(val, bool):
         return 'T' if val else 'F'
     elif isinstance(val, int):
         return '%d' % val
     elif isinstance(val, float):
-        if val < 1.:
+        if 0 < abs(val) < 1e-4:
+            return '%0.6e' % val
+        elif abs(val) < 1.:
             return '%0.6f' % val
         else:
             return '%0.2f' % val

@@ -40,7 +40,7 @@ from aeolis.utils import *
 # initialize logger
 logger = logging.getLogger(__name__)
 
-def duran_grainspeed(s, p):
+def duran_grainspeed(s, p, mode='normal'):
     '''Compute grain speed according to Duran 2007 (p. 42)
 
     Parameters
@@ -67,9 +67,15 @@ def duran_grainspeed(s, p):
     ny = p['ny']
     
     # Shear velocity and threshold
-    ustar = s['ustar']
-    ustars = s['ustars']
-    ustarn = s['ustarn']
+    if mode == 'normal':
+        ustar = s['ustarAir']
+        ustars = s['ustarsAir']
+        ustarn = s['ustarnAir']
+    if mode == 'bed':
+        ustar = s['ustar']
+        ustars = s['ustars']
+        ustarn = s['ustarn']
+    # ustar0 = s['ustar0']
     ustar0 = s['ustar0']
     uth = s['uth0'] # uth0 or uth???
     uth0 = s['uth0'] 
@@ -174,51 +180,75 @@ def duran_grainspeed(s, p):
     # Start looping over fractions
     for i in range(nf):  
 
-        # Compute effective wind velocity, eq 1.60 p.42
-        ueff[:,:,i] = (uth[:,:,i] / kappa) * (np.log(z1[i] / z0[i]) + (z1[i]/zm[:,:,i]) * (ustar[:,:,i]/uth[:,:,i]-1)) 
+        # Compute effective wind velocity (eq 1.60 p.42) and grainspeed over a flat bed (if dhs and dhn = 0)
         ueff0[:,:,i] = (uth0[:,:,i] / kappa) * (np.log(z1[i] / z0[i]) + (z1[i]/zm[:,:,i]) * (ustar0[:,:,i]/uth0[:,:,i]-1))
-
-        # Compute grainspeed over a flat bed (if dhs and dhn = 0)
         u0[:,:,i] = (ueff0[:,:,i] - uf[i] / (np.sqrt(2 * alpha[i])))
-        
-        # Compute grain speed: First approximation (eq 1.62) in case of gentle slopes
-        us_approx[:,:,i] = (ueff[:,:,i] - uf[i] / (np.sqrt(2. * alpha[i]) * Ax[:,:,i])) * ets[:,:,i] \
-                        - (np.sqrt(2*alpha[i]) * uf[i] / Ax[:,:,i]) * dhs[:,:,i]  
-        
-        un_approx[:,:,i] = (ueff[:,:,i] - uf[i] / (np.sqrt(2. * alpha[i]) * Ax[:,:,i])) * etn[:,:,i] \
-                        - (np.sqrt(2*alpha[i]) * uf[i] / Ax[:,:,i]) * dhn[:,:,i] 
-        
-        u_approx[:,:,i] = np.hypot(us_approx[:,:,i], un_approx[:,:,i])
 
-        # If 'regular' duran method is chosen, u_approx is the final solution
-        if p['method_grainspeed'] == 'duran':
-            us[:,:,i] = us_approx[:,:,i]
-            un[:,:,i] = un_approx[:,:,i]
-            u[:,:,i] = u_approx[:,:,i]
+        # Uniform grainspeed (uniform and direction of the wind, but more realistic magnitude)
+        if p['method_grainspeed']=='duran_uniform':
+            if uw[0,0,i] > 0.:
+                us[:,:,i] = u0[:,:,i] * uws[0,0,i] / uw[0,0,i]
+                un[:,:,i] = u0[:,:,i] * uwn[0,0,i] / uw[0,0,i]
+                u[:,:,i] = u0[:,:,i]
+            
+        # Direct proportionality grainspeed to wind speed, but no slope effects
+        elif p['method_grainspeed']=='duran_flat':
+            us[:,:,i] = u0[:,:,i] * ets[:,:,i]
+            un[:,:,i] = u0[:,:,i] * etn[:,:,i]
+            u[:,:,i] = u0[:,:,i]
 
-        # When duran_full is chosen the full formulation (eq 1.61) will be solved
-        elif p['method_grainspeed'] == 'duran_full':
+        elif p['method_grainspeed']=='duran' or p['method_grainspeed']=='duran_full':
 
-            # Transform into complex numbers
-            u_approx_i = us_approx[:,:,i] + un_approx[:,:,i] * 1j
-            veff_i = ueff[:,:,i] * ets[:,:,i] + ueff[:,:,i] * etn[:,:,i] * 1j
-            dh_i = dhs[:,:,i] + dhn[:,:,i] * 1j
-            uf_i = uf[i]
-            alpha_i = alpha[i]
+            # Compute effective wind velocity, eq 1.60 p.42
+            ueff[:,:,i] = (uth[:,:,i] / kappa) * (np.log(z1[i] / z0[i]) + (z1[i]/zm[:,:,i]) * (ustar[:,:,i]/uth[:,:,i]-1)) 
 
-            # Solver van eq 1.61
-            def solve_u(u_i: complex, veff_i: complex, uf_i: float, alpha_i: float, dh_i: complex) -> complex:
-                return (veff_i - u_i) * np.abs(veff_i - u_i) / (uf_i ** 2) - u_i / (2 * alpha_i * np.abs(u_i)) - dh_i
-            u_i = optimize.newton(solve_u, u_approx_i, maxiter=20, tol=0.05, args=(veff_i, uf_i, alpha_i, dh_i)) 
+            # Compute grain speed: First approximation (eq 1.62) in case of gentle slopes
+            us_approx[:,:,i] = (ueff[:,:,i] - uf[i] / (np.sqrt(2. * alpha[i]) * Ax[:,:,i])) * ets[:,:,i] \
+                            - (np.sqrt(2*alpha[i]) * uf[i] / Ax[:,:,i]) * dhs[:,:,i]  
+            
+            un_approx[:,:,i] = (ueff[:,:,i] - uf[i] / (np.sqrt(2. * alpha[i]) * Ax[:,:,i])) * etn[:,:,i] \
+                            - (np.sqrt(2*alpha[i]) * uf[i] / Ax[:,:,i]) * dhn[:,:,i] 
+            
+            u_approx[:,:,i] = np.hypot(us_approx[:,:,i], un_approx[:,:,i])
 
-            # Transform back into components
-            us[:,:,i] = np.real(u_i)
-            un[:,:,i] = np.imag(u_i)
-            u[:,:,i]= np.abs(u_i)
+            # If 'regular' duran method is chosen, u_approx is the final solution
+            if p['method_grainspeed'] == 'duran':
+                us[:,:,i] = us_approx[:,:,i]
+                un[:,:,i] = un_approx[:,:,i]
+                u[:,:,i] = u_approx[:,:,i]
 
+            # When duran_full is chosen the full formulation (eq 1.61) will be solved
+            elif p['method_grainspeed'] == 'duran_full':
+
+                # Transform into complex numbers
+                u_approx_i = us_approx[:,:,i] + un_approx[:,:,i] * 1j
+                veff_i = ueff[:,:,i] * ets[:,:,i] + ueff[:,:,i] * etn[:,:,i] * 1j
+                dh_i = dhs[:,:,i] + dhn[:,:,i] * 1j
+                uf_i = uf[i]
+                alpha_i = alpha[i]
+
+                # Solver van eq 1.61
+                def solve_u(u_i: complex, veff_i: complex, uf_i: float, alpha_i: float, dh_i: complex) -> complex:
+                    return (veff_i - u_i) * np.abs(veff_i - u_i) / (uf_i ** 2) - u_i / (2 * alpha_i * np.abs(u_i)) - dh_i
+                u_i = optimize.newton(solve_u, u_approx_i, maxiter=20, tol=0.05, args=(veff_i, uf_i, alpha_i, dh_i)) 
+
+                # Transform back into components
+                us[:,:,i] = np.real(u_i)
+                un[:,:,i] = np.imag(u_i)
+                u[:,:,i]= np.abs(u_i)
+
+            else:
+                logger.error(f"Unknown method_grainspeed: {p['method_grainspeed']}")
         else:
-            logger.error('Grainspeed method not found!')
+            logger.error(f"Unknown method_grainspeed: {p['method_grainspeed']}")
         
+        # Hard cap on maximum grainspeed to avoid instabilities
+        ucap = 5 # m/s
+        ix_ucap = (u[:,:,i] > ucap)
+        us[ix_ucap,i] = us[ix_ucap,i] * ucap / u[ix_ucap,i]
+        un[ix_ucap,i] = un[ix_ucap,i] * ucap / u[ix_ucap,i]
+        u[ix_ucap,i]  = ucap
+
         # For SedTRAILS: Set grainspeed to 0 whenever uth > ustar
         usST[:,:,i] = us[:,:,i]
         unST[:,:,i] = un[:,:,i]
@@ -308,9 +338,18 @@ def equilibrium(s, p):
         
         # u via grainvelocity:
         
-        if p['method_grainspeed']=='duran' or p['method_grainspeed']=='duran_full':
+        if p['method_grainspeed'] in ['duran', 'duran_full', 'duran_uniform', 'duran_flat']:
             #the syntax inside grainspeed needs to be cleaned up
-            u0, us, un, u, usST, unST = duran_grainspeed(s,p)
+            u0, us, un, u, usST, unST = duran_grainspeed(s,p, mode='normal')
+            
+            if p['zeta_grainspeed']:
+                u0_bed, us_bed, un_bed, u_bed, usST_bed, unST_bed = duran_grainspeed(s,p, mode='bed')
+                zeta = s['zeta'][:,:,np.newaxis].repeat(nf, axis=2)
+                u0 = u0_bed * zeta + u0 * (1 - zeta)
+                us = us_bed * zeta + us * (1 - zeta)
+                un = un_bed * zeta + un * (1 - zeta)
+                u  = u_bed  * zeta + u  * (1 - zeta)
+
             s['u0'] = u0
             s['us'] = us
             s['un'] = un
@@ -335,6 +374,7 @@ def equilibrium(s, p):
         
         ustar  = s['ustar'][:,:,np.newaxis].repeat(nf, axis=2)
         ustar0 = s['ustar0'][:,:,np.newaxis].repeat(nf, axis=2)
+        ustar_air = s['ustarAir'][:,:,np.newaxis].repeat(nf, axis=2)
         
         uth    = s['uth']
         uthf   = s['uthf']
@@ -345,6 +385,8 @@ def equilibrium(s, p):
         
         s['Cu']  = np.zeros(uth.shape)
         s['Cuf'] = np.zeros(uth.shape)
+        s['CuAir'] = np.zeros(uth.shape)
+        s['CuBed'] = np.zeros(uth.shape)
     
                 
         ix = (ustar != 0.)*(u != 0.)
@@ -354,6 +396,11 @@ def equilibrium(s, p):
             s['Cuf'][ix] = np.maximum(0., p['Cb'] * rhoa / g * (ustar[ix] - uthf[ix])**3 / u[ix])
             
             s['Cu0'][ix] = np.maximum(0., p['Cb'] * rhoa / g * (ustar0[ix] - uth0[ix])**3 / u[ix])
+
+            # [NEW] Two transport components divided into air and bed interaction
+            s['CuAir'][ix] = np.maximum(0., p['Cb'] * rhoa / g * (ustar_air[ix] - uth0[ix])**3 / u[ix])
+            s['CuBed'][ix] = s['Cu'][ix].copy() # Temporary solution
+            
             
         elif p['method_transport'].lower() == 'bagnold_gs':
             Dref = 0.000250

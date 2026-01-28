@@ -74,21 +74,21 @@ def initialize(s, p):
     s['zne'][:,:] = p['ne_file']
 
     #initialize thickness of erodable or dry top layer
-    s['zdry'][:,:] = 0.05
+    # s['zdry'][:,:] = 0.05
     
     # initialize bed layers
     s['thlyr'][:,:,:] = p['layer_thickness']
 
     # initialize bed composition
     if isinstance(p['grain_dist'], str):
-            logger.log_and_raise('Grain size file not recognized as array, check file path and whether all values have been filled in.', exc=ValueError) 
+        logger.log_and_raise('Grain size file not recognized as array, check file path and whether all values have been filled in.', exc=ValueError)
 
     if p['bedcomp_file'] is not None and p['supply_file'] is not None :
-            logger.log_and_raise('Conflict in input definition, cannot define supply_file and bedcomp_file simultaneously', exc=ValueError) 
+        logger.log_and_raise('Conflict in input definition, cannot define supply_file and bedcomp_file simultaneously', exc=ValueError)
 
     if p['supply_file'] is not None:
         s['mass'][:,:,:,:] = 0 #p['supply_file'].reshape(s['mass'].shape)                
-    elif p['bedcomp_file'] is None and p['grain_dist'].ndim == 1 and p['grain_dist'].dtype == 'float64' or p['grain_dist'].dtype == 'int': 
+    elif p['bedcomp_file'] is None and p['grain_dist'].ndim == 1 and (p['grain_dist'].dtype == 'float64' or p['grain_dist'].dtype == 'int'):
         # Both float and int are included as options for the grain dist to make sure there is no error when grain_dist is filled in as 1 instead of 1.0. 
         for i in range(nl):
             gs = makeiterable(p['grain_dist'])
@@ -125,7 +125,18 @@ def initialize(s, p):
     # initialize threshold
     if p['threshold_file'] is not None:
         s['uth'] = p['threshold_file'][:,:,np.newaxis].repeat(nf, axis=-1)
-        
+
+    # adjust max_bedlevel_change to layer thickness
+    # filter out fractions that are => 0.01 m in diameter 
+    # (assumed non-erodible, assumed not included for transport but as roughness element for sheltering)
+    norm_grain_dist = normalize(p['grain_dist'])
+    layer_availability = np.min(norm_grain_dist[(p['grain_size'] < 0.01)]) * p['layer_thickness']
+    if p['max_bedlevel_change'] > layer_availability:
+        logger.warning(f'WARNING: Adjusting timesteps accommodate enough sand in the top layer. \
+                       \n Try to avoid this by increasing your layer thickness! Further timestep reduction will be based on pickup rates. \
+                       \n This does not account for individual fractions with small availability (user responsibility!)')
+        p['max_bedlevel_change'] = layer_availability
+
     return s
 
 
@@ -224,11 +235,11 @@ def wet_bed_reset(s, p):
         
         Tbedreset = p['dt_opt'] / p['Tbedreset']
         
-        ix = s['TWL'] > (s['zb'])
+        # NEW: Only reset where bed is lower than initial bed level
+        ix = (s['TWL'] > s['zb']) #* (s['zb'] < s['zb0'])
         s['zb'][ix] += (s['zb0'][ix] - s['zb'][ix]) * Tbedreset
             
     return s
-
 
 
 def update(s, p):
@@ -288,11 +299,10 @@ def update(s, p):
     # reshape mass matrix
     m = s['mass'].reshape((-1,nl,nf)).copy()
 
+    # # negative mass may occur in case of deposition due to numerics,
+    # # which should be prevented
+    m, dm, pickup, burial = prevent_negative_mass(m, dm, pickup)
 
-    # negative mass may occur in case of deposition due to numerics,
-    # which should be prevented
-    m, dm, pickup = prevent_negative_mass(m, dm, pickup)
-    
     # determine weighing factors
     d = normalize(m, axis=2)
     
@@ -300,14 +310,6 @@ def update(s, p):
     m[:,0,:] -= pickup
     m = arrange_layers(m,dm,d,nl,ix_ero,ix_dep)
     
-    # this is replaced by arrange_layers and speed up using numba
-    # for i in range(1,nl):
-    #     m[ix_ero,i-1,:] -= dm[ix_ero,:] * d[ix_ero,i,:]
-    #     m[ix_ero,i,  :] += dm[ix_ero,:] * d[ix_ero,i,:]
-    #     m[ix_dep,i-1,:] -= dm[ix_dep,:] * d[ix_dep,i-1,:]
-    #     m[ix_dep,i,  :] += dm[ix_dep,:] * d[ix_dep,i-1,:]
-    #m[ix_dep,-1,:] -= dm[ix_dep,:] * d[ix_dep,-1,:]
-
     if p['grain_dist'].ndim == 2: 
         m[ix_ero,-1,:] -= dm[ix_ero,:] * normalize(p['grain_dist'][-1,:])[np.newaxis,:].repeat(np.sum(ix_ero), axis=0)
     elif type(p['bedcomp_file']) == np.ndarray:
@@ -338,7 +340,10 @@ def update(s, p):
     # update bathy
     if p['process_bedupdate']:
 
-        dz = dm[:, 0].reshape((ny + 1, nx + 1)) / (p['rhog'] * (1. - p['porosity']))
+        # include buried mass in the total flux calculation for bathymetry
+        total_flux = dm[:, 0] + np.sum(burial, axis=1)
+        dz = total_flux.reshape((ny + 1, nx + 1)) / (p['rhog'] * (1. - p['porosity']))
+        
         # s['dzb'] = dm[:, 0].reshape((ny + 1, nx + 1))
         s['dzb'] = dz.copy()
 
@@ -398,6 +403,8 @@ def prevent_negative_mass(m, dm, pickup):
         Total sediment mass exchanged between layers (nx*ny, nf)
     np.ndarray
         Sediment pickup (nx*ny, nf)
+    np.ndarray
+        Sediment mass buried/pushed out of domain (nx*ny, nf)
 
     Note
     ----
@@ -409,6 +416,9 @@ def prevent_negative_mass(m, dm, pickup):
 
     nl = m.shape[1]
     nf = m.shape[2]
+    
+    # Initialize burial tracking
+    burial = np.zeros_like(dm)
 
     ###
     ### case #1: deposition cells with some erosional fractions
@@ -444,8 +454,11 @@ def prevent_negative_mass(m, dm, pickup):
 
     # determine deposition in terms of layer mass (round down)
     n = dm[:,:1] // mx
+    
+    # track cells triggering this case for dm update
+    ix_case2 = (n > 0).flatten()
 
-    # determine if deposition is larger than a sinle layer mass
+    # determine if deposition is larger than a single layer mass
     if np.any(n > 0):
 
         # determine distribution of deposition
@@ -458,25 +471,23 @@ def prevent_negative_mass(m, dm, pickup):
             if not np.any(ix):
                 break
 
+            # track sediment moved out of the bottom layer (burial)
+            burial[ix,:] += m[ix,-1,:]
+
             # move all sediment below current layer down one layer
             m[ix,(i+1):,:] = m[ix,i:-1,:]
 
             # fill current layer with deposited sediment
             m[ix,i,:] = mx[ix,:].repeat(nf, axis=1) * d[ix,:]
 
-            # remove deposited sediment from pickup
-            pickup[ix,:] -= m[ix,i,:]
-
-        # discard any remaining deposits at locations where all layers
-        # are filled with fresh deposits
-        ix = (dm[:,:1] > mx).flatten()
-        if np.any(ix):
-            pickup[ix,:] = 0.
+            # remove deposited sediment from pickup 
+            # THIS IS CHANGED: WAS -= (add positive m to negative pickup)
+            pickup[ix,:] += m[ix,i,:] 
 
         # recompute sediment exchange mass
-        dm[ix,:] = -np.sum(pickup[ix,:], axis=-1, keepdims=True).repeat(nf, axis=-1)
+        dm[ix_case2,:] = -np.sum(pickup[ix_case2,:], axis=-1, keepdims=True).repeat(nf, axis=-1)
 
-    return m, dm, pickup
+    return m, dm, pickup, burial
 
 
 def average_change(l, s, p):

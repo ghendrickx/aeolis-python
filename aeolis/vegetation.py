@@ -57,10 +57,15 @@ def initialize (s,p):
     '''
     
     if p['veg_file'] is not None:
-        s['rhoveg'][:, :] = p['veg_file']
+        s['rhoveg'][:, :, 0] = p['veg_file']
 
-        if np.isnan(s['rhoveg'][0, 0]):
-            s['rhoveg'][:,:] = 0.
+        if np.isnan(s['rhoveg'][0, 0, 0]):
+            s['rhoveg'][:] = 0.
+
+    # Remove the nspecies-dimension from 'rhoveg' and 'hveg' 
+    # (added for grass.py; overlapping names)
+    s['rhoveg'] = s['rhoveg'][:, :, 0]
+    s['hveg'] = s['hveg'][:, :, 0]
 
     ix = s['rhoveg'] < 0
     s['rhoveg'][ix] *= 0.

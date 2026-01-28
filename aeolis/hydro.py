@@ -67,7 +67,8 @@ def interpolate(s, p, t):
     if p['process_tide']:
         # Check if SWL or zs are not provided by some external model
         # In that case, skip initialization
-        if ('zs' not in p['external_vars']) :
+        if not p.get('external_vars') or ('zs' not in p.get('external_vars', [])) :
+           
             if p['tide_file'] is not None:
                 s['SWL'][:,:] = interp_circular(t,
                                             p['tide_file'][:,0],
@@ -79,7 +80,7 @@ def interpolate(s, p, t):
             s['SWL'] = apply_mask(s['SWL'], s['tide_mask'])
 
         # External model input:
-        elif ('zs' in p['external_vars']):
+        elif p.get('external_vars') and 'zs' in p['external_vars']:
             
 
             s['SWL'] = s['zs'][:]
@@ -101,7 +102,7 @@ def interpolate(s, p, t):
 
     # Check if Hs or Tp are not provided by some external model
     # In that case, skip initialization
-    if ('Hs' not in p['external_vars']) and ('Tp' not in p['external_vars']):
+    if not p['external_vars'] or (('Hs' not in p['external_vars']) and ('Tp' not in p['external_vars'])):
 
         if p['process_wave'] and p['wave_file'] is not None:
 
@@ -139,6 +140,11 @@ def interpolate(s, p, t):
                     s['TWL'][iy][:] = s['SWL'][iy][:]  + s['R'][iy][:]
                     s['DSWL'][iy][:] = s['SWL'][iy][:] + s['eta'][iy][:]            # Was s['zs'] before
 
+            
+            else: # No run-up processing
+                s['TWL'][:] = s['SWL'][:]
+                s['DSWL'][:] = s['SWL'][:]
+
             # Alters wave height based on maximum wave height over depth ratio, gamma default = 0.5
             s['Hs'] = np.minimum(h * p['gamma'], s['Hs'])
 
@@ -146,9 +152,12 @@ def interpolate(s, p, t):
             s['Hs'] = apply_mask(s['Hs'], s['wave_mask'])
             s['Tp'] = apply_mask(s['Tp'], s['wave_mask'])
 
-        else:
+        else: # No wave processing
             s['Hs'] = s['zb'] * 0.
             s['Tp'] = s['zb'] * 0.
+
+            s['TWL'][:] = s['SWL'][:]
+            s['DSWL'][:] = s['SWL'][:]
 
     # apply complex mask (also for external model input)
     else:
@@ -158,7 +167,7 @@ def interpolate(s, p, t):
 
     if p['process_runup']:
         ny = p['ny']
-        if ('Hs' in p['external_vars']):
+        if p.get('external_vars') and 'Hs' in p['external_vars']:
 
             eta, sigma_s, R = calc_runup_stockdon(s['Hs'], s['Tp'], p['beach_slope'])
             s['R'][:] = R
@@ -234,6 +243,7 @@ def update(s, p, dt,t):
         Spatial grids
 
     '''
+
     # Groundwater level Boussinesq (1D CS-transects)
     if p['process_groundwater']:
         

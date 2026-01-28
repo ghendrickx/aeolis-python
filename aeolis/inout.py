@@ -125,7 +125,8 @@ def write_configfile(configfile, p=None):
     '''Write model configuration file
 
     Writes model configuration to file. If no model configuration is
-    given, the default configuration is written to file. Any
+    given, the default configuration is written to file. Preserves
+    the structure and organization from DEFAULT_CONFIG. Any
     parameters with a name ending with `_file` and holding a matrix
     are treated as separate files. The matrix is then written to an
     ASCII file using the ``numpy.savetxt`` function and the parameter
@@ -149,28 +150,126 @@ def write_configfile(configfile, p=None):
     read_configfile
 
     '''
-
+    # update default configuration
     if p is None:
         p = DEFAULT_CONFIG.copy()
+    else:
+        p = {**DEFAULT_CONFIG, **p}
 
-    fmt = '%%%ds = %%s\n' % np.max([len(k) for k in p.keys()])
+    # Parse constants.py to extract section headers, order, and comments
+    import aeolis.constants
+    constants_file = aeolis.constants.__file__
+    
+    section_headers = []
+    section_order = {}
+    comments = {}
+    
+    with open(constants_file, 'r', encoding='utf-8') as f:
+        lines = f.readlines()
+    
+    # Find DEFAULT_CONFIG definition
+    in_default_config = False
+    current_section = None
+    current_keys = []
+    
+    for line in lines:
+        # Check if we're entering DEFAULT_CONFIG
+        if 'DEFAULT_CONFIG' in line and '=' in line and '{' in line:
+            in_default_config = True
+            continue
         
+        # Check if we're exiting DEFAULT_CONFIG
+        if in_default_config and line.strip().startswith('}'):
+            # Save last section
+            if current_section and current_keys:
+                section_order[current_section] = current_keys
+            break
+        
+        if in_default_config:
+            # Check for section header (starts with # ---)
+            if line.strip().startswith('# ---') and len(line.strip()) > 10:
+                # Save previous section
+                if current_section and current_keys:
+                    section_order[current_section] = current_keys
+                    current_keys = []
+                
+                # Extract new section name (between # --- and ---)
+                text = line.strip()[5:].strip().rstrip('- #')
+                current_section = text
+                section_headers.append(current_section)
+            
+            # Check for parameter definition (contains ':' and not a comment-only line)
+            elif ':' in line and "'" in line and not line.strip().startswith('#'):
+                # Extract parameter name
+                param_match = re.search(r"'([^']+)'", line)
+                if param_match:
+                    param_name = param_match.group(1)
+                    current_keys.append(param_name)
+                    
+                    # Extract comment (after #)
+                    if '#' in line.split(':')[1]:
+                        comment_part = line.split('#')[1].strip()
+                        comments[param_name] = comment_part
+    
+    # Determine column widths for formatting
+    max_key_len = max(len(k) for k in p.keys()) if p else 30
+    
     with open(configfile, 'w') as fp:
-
+        # Write header
         fp.write('%s\n' % ('%' * 70))
         fp.write('%%%% %-64s %%%%\n' % 'AeoLiS model configuration')
         fp.write('%%%% Date: %-58s %%%%\n' % time.strftime('%Y-%m-%d %H:%M:%S'))
         fp.write('%s\n' % ('%' * 70))
         fp.write('\n')
         
-        for k, v in sorted(p.items()):
-            if k.endswith('_file') and isiterable(v):
-                fname = '%s.txt' % k.replace('_file', '')
-                backup(fname)
-                np.savetxt(fname, v)
-                fp.write(fmt % (k, fname))
-            else:
-                fp.write(fmt % (k, print_value(v, fill='')))
+        # Write each section
+        for section in section_headers:
+            if section not in section_order:
+                continue
+            
+            keys_in_section = section_order[section]
+            section_keys = [k for k in keys_in_section if k in p]
+            
+            if not section_keys:
+                continue
+            
+            # Write section header
+            fp.write('%% %s %s %s %% \n' % ('-' * 15, section, '-' * 15))
+            # fp.write('%% %s\n' % ('-' * 70))
+            
+            # Write each key in this section
+            for key in section_keys:
+                value = p[key]
+                
+                comment = comments.get(key, '')
+                
+                # Format the value
+                formatted_value = print_value(value, fill='None')
+                
+                # Write the line with proper formatting
+                fp.write('{:<{width}} = {:<20} % {}\n'.format(
+                    key, formatted_value, comment, width=max_key_len
+                ))
+            
+            fp.write('\n')  # Blank line between sections
+        
+        # Write any remaining keys not in the section order
+        remaining_keys = [k for k in p.keys() if k not in sum(section_order.values(), [])]
+        if remaining_keys:
+            fp.write('%% %s %s\n' % ('-' * 15, 'Additional Parameters'))
+            # fp.write('%% %s\n' % ('-' * 70))
+            for key in sorted(remaining_keys):
+                value = p[key]
+                
+                # Skip this key if its value matches the default
+                if key in DEFAULT_CONFIG and np.all(value == DEFAULT_CONFIG[key]):
+                    continue
+                
+                comment = comments.get(key, '')               
+                formatted_value = print_value(value, fill='None')
+                fp.write('{:<{width}} = {:<20} %% {}\n'.format(
+                    key, formatted_value, comment, width=max_key_len
+                ))
 
 
 def check_configuration(p):
@@ -216,17 +315,17 @@ def check_configuration(p):
         logger.warning('Wind velocity threshold based on salt content following Nickling and '
                        'Ecclestone (1981) is implemented for testing only. Use with care.')
         
-    if p['method_roughness'] == 'constant':        
-        logger.warning('Warning: the used roughness method (constant) defines the z0 as '
-                       'k (z0 = k), this was implemented to ensure backward compatibility '
-                       'and does not follow the definition of Nikuradse (z0 = k / 30).')
+    # if p['method_roughness'] == 'constant':        
+    #     logger.warning('Warning: the used roughness method (constant) defines the z0 as '
+    #                    'k (z0 = k), this was implemented to ensure backward compatibility '
+    #                    'and does not follow the definition of Nikuradse (z0 = k / 30).')
     
-    # check if steadystate solver is used with multiple sediment fractions
-    if p['solver'].lower() in ['steadystate', 'steadystatepieter']:
-        if len(p['grain_size']) > 1:
-            logger.log_and_raise('The steadystate solver is not compatible with multiple sediment fractions. '
-                                 'Please use a single sediment fraction or switch to a different solver (e.g., trunk or pieter).', 
-                                 exc=ValueError)
+    # # check if steadystate solver is used with multiple sediment fractions
+    # if p['solver'].lower() in ['steadystate', 'steadystatepieter']:
+    #     if len(p['grain_size']) > 1:
+    #         logger.log_and_raise('The steadystate solver is not compatible with multiple sediment fractions. '
+    #                              'Please use a single sediment fraction or switch to a different solver (e.g., trunk or pieter).', 
+    #                              exc=ValueError)
 
         
 def parse_value(val, parse_files=True, force_list=False):
@@ -281,13 +380,19 @@ def parse_value(val, parse_files=True, force_list=False):
         
     val = val.strip()
     
-    if ' ' in val or force_list:
+    # Check for datetime patterns (YYYY-MM-DD HH:MM:SS or similar)
+    # Treat as string if it matches datetime format
+    if re.match(r'^\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}(:\d{2})?', val):
+        return val
+    elif ' ' in val or force_list:
         return np.asarray([parse_value(x) for x in val.split(' ')])
     elif re.match('^[TF]$', val):
         return val == 'T'
     elif re.match(r'^-?\d+$', val):
         return int(val)
     elif re.match(r'^-?[\d.]+$', val):
+        return float(val)
+    elif re.match(r'^-?\d+(\.\d+)?[eE][+-]?\d+$', val):  # scientific notation
         return float(val)
     elif re.match('None', val):
         return None
@@ -401,8 +506,7 @@ def visualize_grid(s, p):
     # Figure lay-out settings
     fig.colorbar(pc, ax=ax)
     ax.axis('equal')
-    ax.set_xlim([np.min(x) - 0.15*xylen, np.max(x) + 0.15*xylen])
-    ax.set_ylim([np.min(y) - 0.15*xylen, np.max(y) + 0.15*xylen])
+    ax.margins(0.15)
     height = 8.26772 # A4 width
     width = 11.6929 # A4 height
     fig.set_size_inches(width, height)
@@ -435,7 +539,7 @@ def visualize_timeseries(p, t):
 
     # Read the user input (waves)
     
-    if np.shape(p['wave_file'])[1]== 3:
+    if p['wave_file'] is not None and np.shape(p['wave_file'])[1]== 3:
         w_t = p['wave_file'][:,0]
         w_Hs = p['wave_file'][:,1]
         w_Tp = p['wave_file'][:,2]
@@ -445,7 +549,7 @@ def visualize_timeseries(p, t):
         axs[3].set_title('Wave period, Tp (sec)')
 
     # Read the user input (tide)
-    if np.shape(p['tide_file'])[1]==2:
+    if p['tide_file'] is not None and np.shape(p['tide_file'])[1]==2:
         T_t = p['tide_file'][:,0]
         T_zs = p['tide_file'][:,1]
         axs[4].plot(T_t, T_zs, 'k')
@@ -476,6 +580,15 @@ def visualize_timeseries(p, t):
     fig.savefig('figure_timeseries_initialization.png', dpi=200)
     plt.close()
 
+def safe_quiver(ax, x, y, U, V):
+    mask = np.isfinite(U) & np.isfinite(V)
+    ax.quiver(
+        x[mask], y[mask],
+        U[mask], V[mask],
+        scale_units='xy',
+        scale=1.0,
+        angles='xy'
+    )
 
 def visualize_spatial(s, p):
     '''Create figures and tables for the user to check whether the input is correctly interpreted'''
@@ -505,11 +618,17 @@ def visualize_spatial(s, p):
     import warnings 
     warnings.filterwarnings("ignore", category=UserWarning)
 
+    # Remove the nspecies dimension for plotting for rhoveg
+    if s['rhoveg'].ndim == 3:
+        rhoveg = s['rhoveg'][:, :, 0]
+    else:
+        rhoveg = s['rhoveg']
+
     # Plotting colormeshes
     if p['ny'] > 0:
         pcs[0][0] = axs[0,0].pcolormesh(x, y, s['zb'], cmap='viridis')
         pcs[0][1] = axs[0,1].pcolormesh(x, y, s['zne'], cmap='viridis')
-        pcs[0][2] = axs[0,2].pcolormesh(x, y, s['rhoveg'], cmap='Greens', clim= [0, 1])
+        pcs[0][2] = axs[0,2].pcolormesh(x, y, rhoveg, cmap='Greens', clim= [0, 1])
         pcs[1][0] = axs[1,0].pcolormesh(x, y, s['uw'], cmap='plasma')
         pcs[1][1] = axs[1,1].pcolormesh(x, y, s['ustar'], cmap='plasma')
         pcs[1][2] = axs[1,2].pcolormesh(x, y, s['u'][:, :, 0], cmap='plasma')
@@ -525,7 +644,7 @@ def visualize_spatial(s, p):
     else:
         pcs[0][0] = axs[0,0].scatter(x, y, c=s['zb'], cmap='viridis')
         pcs[0][1] = axs[0,1].scatter(x, y, c=s['zne'], cmap='viridis')
-        pcs[0][2] = axs[0,2].scatter(x, y, c=s['rhoveg'], cmap='Greens', clim= [0, 1])
+        pcs[0][2] = axs[0,2].scatter(x, y, c=rhoveg, cmap='Greens', clim= [0, 1])
         pcs[1][0] = axs[1,0].scatter(x, y, c=s['uw'], cmap='plasma')
         pcs[1][1] = axs[1,1].scatter(x, y, c=s['ustar'], cmap='plasma')
         pcs[1][2] = axs[1,2].scatter(x, y, c=s['tau'], cmap='plasma')
@@ -544,9 +663,9 @@ def visualize_spatial(s, p):
 
     # Quiver for vectors
     skip = 10
-    axs[1,0].quiver(x[::skip, ::skip], y[::skip, ::skip], s['uws'][::skip, ::skip], s['uwn'][::skip, ::skip])
-    axs[1,1].quiver(x[::skip, ::skip], y[::skip, ::skip], s['ustars'][::skip, ::skip], s['ustarn'][::skip, ::skip])
-    axs[1,2].quiver(x[::skip, ::skip], y[::skip, ::skip], s['us'][::skip, ::skip, 0], s['un'][::skip, ::skip, 0])
+    safe_quiver(axs[1,0], x[::skip, ::skip], y[::skip, ::skip], s['uws'][::skip, ::skip], s['uwn'][::skip, ::skip])
+    safe_quiver(axs[1,1], x[::skip, ::skip], y[::skip, ::skip], s['ustars'][::skip, ::skip], s['ustarn'][::skip, ::skip])
+    safe_quiver(axs[1,2], x[::skip, ::skip], y[::skip, ::skip], s['us'][::skip, ::skip, 0], s['un'][::skip, ::skip, 0])
 
     # Adding titles to the plots
     axs[0,0].set_title('Bed level, zb (m)')
@@ -571,9 +690,8 @@ def visualize_spatial(s, p):
         # Figure lay-out settings
             fig.colorbar(pcs[irow][icol], ax=ax)
             ax.axis('equal')
+            ax.margins(0.15)
             xylen = np.maximum(xlen, ylen)
-            ax.set_xlim([np.min(x) - 0.15*xylen, np.max(x) + 0.15*xylen])
-            ax.set_ylim([np.min(y) - 0.15*xylen, np.max(y) + 0.15*xylen])
             ax.axes.xaxis.set_visible(False)
             ax.axes.yaxis.set_visible(False)
             width = 8.26772*2 # A4 width
