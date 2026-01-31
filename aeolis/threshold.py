@@ -161,7 +161,7 @@ def compute_bedslope(s, p):
     '''
 
     # Load Parameters
-    theta_dyn_deg = p['theta_dyn'] # theta_dyn is the hard limit (avalanche angle)
+    theta_dyn_deg = p['theta_dyn'] - 1. # theta_dyn is the hard limit (avalanche angle)
     theta_dry_deg = p['theta_dry'] # theta_dry defaults to theta_dyn if not specified
 
     tan_dyn = np.tan(np.deg2rad(theta_dyn_deg))

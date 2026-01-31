@@ -375,7 +375,7 @@ DEFAULT_CONFIG = {
     'dx'                            : 1.,
     'dy'                            : 1.,
     'L'                             : 100.,               # [m] Typical length scale of dune feature (perturbation)
-    'l'                             : 10.,                # [m] Inner layer height (perturbation)
+    'l'                             : 1.,                 # [m] Inner layer height (perturbation)
 
     # --- Flow separation bubble (OLD) --- #
     'buffer_width'                  : 10,                 # [m] Width of the bufferzone around the rotational grid for wind perturbation
