@@ -382,12 +382,11 @@ def equilibrium(s, p):
         if p['method_transport'].lower() == 'bagnold':
             s['Cu'][ix]  = np.maximum(0., p['Cb'] * rhoa / g * (ustar[ix] - uth[ix])**3 / u[ix])
             s['Cuf'][ix] = np.maximum(0., p['Cb'] * rhoa / g * (ustar[ix] - uthf[ix])**3 / u[ix])
-            
             s['Cu0'][ix] = np.maximum(0., p['Cb'] * rhoa / g * (ustar0[ix] - uth0[ix])**3 / u[ix])
 
             # [NEW] Two transport components divided into air and bed interaction
             s['CuAir'][ix] = np.maximum(0., p['Cb'] * rhoa / g * (ustar_air[ix] - uth0[ix])**3 / u[ix])
-            s['CuBed'][ix] = s['Cu'][ix].copy() # Temporary solution
+            s['CuBed'][ix] = s['Cu'][ix].copy()
             
             
         elif p['method_transport'].lower() == 'bagnold_gs':
@@ -395,36 +394,58 @@ def equilibrium(s, p):
             d = p['grain_size'][np.newaxis,np.newaxis,:].repeat(nx+1, axis=1)
             s['Cu'][ix]  = np.maximum(0., p['Cb'] * np.sqrt(d[ix]/Dref) * rhoa / g * (ustar[ix] - uth[ix])**3 / u[ix])
             s['Cuf'][ix] = np.maximum(0., p['Cb'] * np.sqrt(d[ix]/Dref) * rhoa / g * (ustar[ix] - uth[ix])**3 / u[ix])
-            
             s['Cu0'][ix] = np.maximum(0., p['Cb'] * np.sqrt(d[ix]/Dref) * rhoa / g * (ustar[ix] - uth[ix])**3 / u[ix])
         
+            # [NEW] Two transport components divided into air and bed interaction
+            s['CuAir'][ix] = np.maximum(0., p['Cb'] * np.sqrt(d[ix]/Dref) * rhoa / g * (ustar_air[ix] - uth0[ix])**3 / u[ix])
+            s['CuBed'][ix] = s['Cu'][ix].copy() 
+
         elif p['method_transport'].lower() == 'kawamura':
             s['Cu'][ix]  = np.maximum(0., p['Ck'] * rhoa / g * (ustar[ix] + uth[ix])**2 * (ustar[ix] - uth[ix]) / u[ix])
             s['Cuf'][ix] = np.maximum(0, p['Ck'] * rhoa / g * (ustar[ix] + uthf[ix])**2 * (ustar[ix] - uthf[ix]) / u[ix])
-        
+            s['Cu0'][ix] = np.maximum(0., p['Ck'] * rhoa / g * (ustar0[ix] + uth0[ix])**2 * (ustar0[ix] - uth0[ix]) / u[ix])
+
+            # [NEW] Two transport components divided into air and bed interaction
+            s['CuAir'][ix] = np.maximum(0., p['Ck'] * rhoa / g * (ustar_air[ix] + uth0[ix])**2 * (ustar_air[ix] - uth0[ix]) / u[ix])
+            s['CuBed'][ix] = s['Cu'][ix].copy()
+
         elif p['method_transport'].lower() == 'lettau':
             s['Cu'][ix]  = np.maximum(0., p['Cl'] * rhoa / g * ustar[ix]**2 * (ustar[ix] - uth[ix]) / u[ix])
             s['Cuf'][ix] = np.maximum(0., p['Cl'] * rhoa / g * ustar[ix]**2 * (ustar[ix] - uthf[ix]) / u[ix])
+            s['Cu0'][ix] = np.maximum(0., p['Cl'] * rhoa / g * ustar0[ix]**2 * (ustar0[ix] - uth0[ix]) / u[ix])
+
+            # [NEW] Two transport components divided into air and bed interaction
+            s['CuAir'][ix] = np.maximum(0., p['Cl'] * rhoa / g * ustar_air[ix]**2 * (ustar_air[ix] - uth0[ix]) / u[ix])
+            s['CuBed'][ix] = s['Cu'][ix].copy()
 
         elif p['method_transport'].lower() == 'dk':
             s['Cu'][ix]  = np.maximum(0., p['Cdk'] * rhoa / g * 0.8*uth[ix] * (ustar[ix]**2 - (0.8*uth[ix])**2) / u[ix])
             s['Cuf'][ix] = np.maximum(0., p['Cdk'] * rhoa / g * 0.8*uthf[ix] * (ustar[ix]**2 - (0.8*uthf[ix])**2) / u[ix])
-            
             s['Cu0'][ix]  = np.maximum(0., p['Cdk'] * rhoa / g * 0.8*uth0[ix] * (ustar0[ix]**2 - (0.8*uth0[ix])**2) / u[ix])
          
+            # [NEW] Two transport components divided into air and bed interaction
+            s['CuAir'][ix] = np.maximum(0., p['Cdk'] * rhoa / g * 0.8*uth0[ix] * (ustar_air[ix]**2 - (0.8*uth0[ix])**2) / u[ix])
+            s['CuBed'][ix] = s['Cu'][ix].copy()
+
         elif p['method_transport'].lower() == 'sauermann':
             alpha_sauermann = 0.35
             s['Cu'][ix]  = np.maximum(0., 2.* alpha_sauermann * rhoa / g * (ustar[ix]**2 - uth[ix]**2))
             s['Cuf'][ix] = np.maximum(0., 2.* alpha_sauermann * rhoa / g * (ustar[ix]**2 - uthf[ix]**2))
-             
             s['Cu0'][ix]  = np.maximum(0., 2.* alpha_sauermann * rhoa / g * (ustar0[ix]**2 - uth0[ix]**2))
          
+            # [NEW] Two transport components divided into air and bed interaction
+            s['CuAir'][ix] = np.maximum(0., 2.* alpha_sauermann * rhoa / g * (ustar_air[ix]**2 - uth0[ix]**2))
+            s['CuBed'][ix] = s['Cu'][ix].copy()
+
         elif p['method_transport'].lower() == 'vanrijn_strypsteen':
             s['Cu'][ix]  = np.maximum(0., p['Cb'] * rhoa / g * ((ustar[ix])**3 - (uth[ix])**3) / u[ix])
             s['Cuf'][ix] = np.maximum(0., p['Cb'] * rhoa / g * ((ustar[ix])**3 - (uth[ix])**3) / u[ix])
-            
             s['Cu0'][ix] = np.maximum(0., p['Cb'] * rhoa / g * ((ustar0[ix])**3 - (uth0[ix])**3) / u[ix])
         
+            # [NEW] Two transport components divided into air and bed interaction
+            s['CuAir'][ix] = np.maximum(0., p['Cb'] * rhoa / g * ((ustar_air[ix])**3 - (uth0[ix])**3) / u[ix])
+            s['CuBed'][ix] = s['Cu'][ix].copy()
+
         else:
             logger.log_and_raise('Unknown transport formulation [%s]' % p['method_transport'], exc=ValueError)   
 
@@ -432,6 +453,8 @@ def equilibrium(s, p):
     s['Cu']  *= p['accfac']
     s['Cuf'] *= p['accfac']
     s['Cu0'] *= p['accfac']
+    s['CuAir'] *= p['accfac']
+    s['CuBed'] *= p['accfac']  
     
     return s
 
