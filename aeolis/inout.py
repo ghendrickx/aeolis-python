@@ -214,7 +214,7 @@ def write_configfile(configfile, p=None):
     # Determine column widths for formatting
     max_key_len = max(len(k) for k in p.keys()) if p else 30
     
-    with open(configfile, 'w') as fp:
+    with open(configfile, 'w', encoding='utf-8') as fp:
         # Write header
         fp.write('%s\n' % ('%' * 70))
         fp.write('%%%% %-64s %%%%\n' % 'AeoLiS model configuration')
