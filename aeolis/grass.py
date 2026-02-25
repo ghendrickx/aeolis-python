@@ -127,7 +127,7 @@ def update(s, p):
         # mortality of smaller tillers during burial or erosion.
         hveg = np.maximum(s['hveg_vsub'][:, :, k], 1e-6)
         rel_dhveg = np.clip(dhveg_local / hveg, -1.0, 0.0)                          # [-] Relative height decrease
-        mortality_factor = np.clip(1.0 + p['gamma_Nt_decay'] * rel_dhveg, 0.0, 1.0) # [-] Mortality factor
+        mortality_factor = np.clip(1.0 + p['gamma_Nt_decay'][k] * rel_dhveg, 0.0, 1.0) # [-] Mortality factor
         s['Nt_vsub'][:, :, k] *= mortality_factor
         s['Nt_vsub'][:, :, k] = np.maximum(s['Nt_vsub'][:, :, k], 0.0)
 
@@ -159,7 +159,7 @@ def spreading(k, Nt, hveg, Nt_avg, B_c, B_s, p, s):
 
     # --- Tiller production rates --------------------------------------------
     S_c = p['G_c'][k] * Nt * B_c * maturity #* saturation    # [tillers/s] clonal rate 
-    S_s = p['G_s'][k] * Nt * B_s * maturity # * saturation    # [tillers/s] seed rate CHECK THIS SATURATION (OTHERWISE NO SEED PRODUCTION FROM FULLY COVERED AREAS)
+    S_s = p['G_s'][k] * Nt * maturity # B_s * saturation    # [tillers/s] seed rate CHECK THIS SATURATION (OTHERWISE NO SEED PRODUCTION FROM FULLY COVERED AREAS)
     
     S_c *= p['dt_veg']                                      # [tillers/dt]
     S_s *= p['dt_veg']                                      # [tillers/dt]
@@ -175,7 +175,7 @@ def spreading(k, Nt, hveg, Nt_avg, B_c, B_s, p, s):
     Nt_clonal_new[ix_neg] = -np.random.poisson(-dNt_clonal[ix_neg])
 
     # --- Seed dispersal -----------------------------------------------------
-    Nt_seed_new = gutils.sample_seed_germination(S_s, p['alpha_s'][k], 
+    Nt_seed_new = gutils.sample_seed_germination(S_s, B_s, p['alpha_s'][k], 
                                                  p['nu_s'][k], p['dx_veg'])
 
     # --- Sum contributions --------------------------------------------------
@@ -206,9 +206,13 @@ def compute_shear_reduction(s, p):
     w_sum = np.zeros_like(s['x'])
     w_num_R0 = np.zeros_like(s['x'])
     w_num_L = np.zeros_like(s['x'])
+    w_num_h = np.zeros_like(s['x'])
+    w_sum_rNt = np.zeros_like(s['x'])
 
     s['R0veg'] = np.ones_like(s['x'])
     L_decay = np.zeros_like(s['x'])
+    hvegeff = np.zeros_like(s['x'])
+    rNt = np.zeros_like(s['x'])
 
     # --- Wind convention ID (Numba) -----------------------------------------
     if p['wind_convention'] == 'nautical':
@@ -233,17 +237,29 @@ def compute_shear_reduction(s, p):
         w_sum   += w
         w_num_R0 += w * R0_k
         w_num_L += w * (s['hvegeff'][:, :, k] / p['c1_okin'][k])
+        w_num_h += w * s['hvegeff'][:, :, k]
+        w_sum_rNt += w * (s['Nt'][:, :, k] / p['Nt_max'][k])
 
     # --- Final normalization (separate loop / block) ------------------------
     ix = w_sum != 0.0
     s['R0veg'][ix] = w_num_R0[ix] / w_sum[ix]
     L_decay[ix] = w_num_L[ix] / w_sum[ix]
+    hvegeff[ix] = w_num_h[ix] / w_sum[ix]
+    rNt[ix] = w_sum_rNt[ix] / w_sum[ix]
 
     # --- Compute leeside Okin reduction -------------------------------------
     if p['process_vegetation_leeside']:
-        R_okin = gutils.compute_okin_reduction(
-            s['x'], s['y'], s['R0veg'], s['udir'], L_decay, udir_id)
+        R_okin, hvegeff_zeta, rNt_zeta, Rveg_zeta = gutils.compute_okin_reduction(
+            s['x'], s['y'], s['R0veg'], s['udir'], L_decay, hvegeff, rNt, udir_id)
         s['Rveg'] = np.minimum(s['R0veg'], R_okin)
+
+        # Store representative vegetation metrics for zeta adjustment in vegetation wake
+        s['hvegeff_zeta'] = np.maximum(hvegeff_zeta, hvegeff)
+        s['rNt_zeta'] = np.maximum(rNt_zeta, rNt)
+
+        s['Rveg_zeta'] = Rveg_zeta
+        s['Rveg_zeta'][(s['Rveg'] == s['R0veg'])] = 1. 
+
     else:
         s['Rveg'] = s['R0veg'].copy()
 
