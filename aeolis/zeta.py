@@ -50,9 +50,7 @@ def compute_zeta(s, p):
         s = zeta_from_vegetation(s, p)
 
     # --- Apply Gaussian filter to zeta --------------------------------------
-    # if p['zeta_sigma'] > 0.0:
-    #     s['zeta'] = ndimage.gaussian_filter(s['zeta'], sigma=p['zeta_sigma'])
-    s['zeta'] = np.clip(s['zeta'], 0.01, 1.0)
+    s['zeta'] = np.clip(s['zeta'], 0.004, 1.0)
 
     return s
 
@@ -143,12 +141,6 @@ def zeta_from_vegetation(s, p):
     a = p['a_weibull']
     b = p['b_weibull']
 
-    # --- Accumulators for species-weighted normalisation --------------------
-    w_sum = np.zeros_like(s['x'])
-    w_num_zeta = np.zeros_like(s['x'])
-    w_num_k = np.zeros_like(s['x'])
-    w_num_L = np.zeros_like(s['x'])
-
     # --- Defaults for cells without vegetation ------------------------------
     zeta_out = s['zeta'].copy()
     k_out = s['kzeta'].copy()
@@ -159,19 +151,15 @@ def zeta_from_vegetation(s, p):
 
         # --- Species weighting based on maturity and density ----------------
         if p['method_vegetation'] == 'grass':
-            maturity = s['hveg'][:, :, ksp] / p['Hveg'][ksp]        # [-]
-            density  = s['Nt'][:, :, ksp] / p['Nt_max'][ksp]        # [-]
-            hveg_eff = s['hvegeff'][:, :, ksp]
-            w = maturity * density                                  # [-]
+            hveg_eff = s['hvegeff_zeta']  # Effective vegetation height for zeta adjustment
         elif p['method_vegetation'] == 'duran':
-            w  = s['rhoveg']                             # [-]
             hveg_eff = s['hveg']
         else:
             ValueError(f"Unknown vegetation method: {p['method_vegetation']}")
 
         # --- Upward lift of transport layer ---------------------------------
         h_sep = np.maximum(s['zsep'] - s['zb'], 0.0)            # [m]
-        h_veg_lift = hveg_eff * p['alpha_lift']                 # [m] OR ACTUAL HVEG?
+        h_veg_lift = hveg_eff * p['alpha_lift'][ksp]            # [m] OR ACTUAL HVEG?
         h_lift = np.maximum(h_sep, h_veg_lift) + Ld             # [m]
 
         # --- Weibull shape parameter k (1 → 3) ------------------------------
@@ -180,7 +168,6 @@ def zeta_from_vegetation(s, p):
         k_zeta = np.maximum(k_zeta, 1e-12)
 
         # --- Bed–interaction factor from Weibull CDF ------------------------
-        # Ld_eff = Ld / gamma(1.0 + 1.0 / k_zeta)
         Ld_eff = h_lift / gamma(1.0 + 1.0 / k_zeta)
         zeta_k = 1.0 - np.exp(-(hveg_eff / Ld_eff)**k_zeta)
         
@@ -188,25 +175,22 @@ def zeta_from_vegetation(s, p):
         zeta_k *= (1.0 - p['bounce'][ksp])
 
         # --- Compensate for vegetation density ------------------------------
-        # Prevents excessive (and spikey) low zeta at low vegetation densities
-        Nt_exp = 0.3 # Exponent for density effect on zeta (lower values = less effect)
+        # Prevents excessive (and spikey) reduction of zeta at low vegetation densities
+        pNt_zeta = p['pNt_zeta'][ksp] # Exponent for density effect on zeta (lower values = less effect)
         if p['method_vegetation'] == 'grass':
-            density_factor = (s['Nt'][:, :, ksp] / p['Nt_max'][ksp]) ** Nt_exp
+            density_factor = s['rNt_zeta'] ** pNt_zeta
         elif p['method_vegetation'] == 'duran':
-            density_factor = s['rhoveg'] ** Nt_exp
+            density_factor = s['rhoveg'] ** pNt_zeta
         zeta_k = 1.0 - density_factor * (1.0 - zeta_k)
 
-        # --- Accumulate for species-weighted normalisation ------------------
-        w_sum      += w
-        w_num_zeta += w * zeta_k
-        w_num_k    += w * k_zeta
-        w_num_L    += w * Ld_eff
+        # Adjust in vegetation wake (sheltering effect)
+        zeta_k = 1.0 - s['Rveg_zeta'] * (1.0 - zeta_k)
 
-    # ---Normalisation across species ----------------------------------------
-    ix = w_sum > 0.0
-    zeta_out[ix] = w_num_zeta[ix] / w_sum[ix]
-    k_out[ix]    = w_num_k[ix] / w_sum[ix]
-    L_out[ix]   = w_num_L[ix] / w_sum[ix]
+        # --- Take the minimum zeta across species ---------------------------
+        ix_zeta = (zeta_k <= zeta_out) 
+        zeta_out[ix_zeta] = zeta_k[ix_zeta]
+        k_out[ix_zeta] = k_zeta[ix_zeta]
+        L_out[ix_zeta] = Ld_eff[ix_zeta]
 
     # --- Store results ------------------------------------------------------
     s['zeta'] = np.clip(zeta_out, 0.0, 1.0)

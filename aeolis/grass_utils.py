@@ -26,7 +26,7 @@ def ensure_grass_parameters(p):
         'lmax_c', 'mu_c', 'alpha_s', 'nu_s',
         'gamma_h', 'dzb_tol_c', 'dzb_tol_s',
         'dzb_opt_h', 'dzb_opt_c', 'dzb_opt_s',
-        'beta_veg', 'm_veg', 'c1_okin', 'bounce'
+        'beta_veg', 'm_veg', 'c1_okin', 'bounce', 'alpha_lift', 'gamma_Nt_decay', 'pNt_zeta'
         ]
 
     for param in param_lists:
@@ -331,7 +331,7 @@ def apply_clonal_kernel(S_c, kernel):
     return dNt_clonal
 
 @njit
-def sample_seed_germination(S_s, a_s, nu_s, dx):
+def sample_seed_germination(S_s, B_s, a_s, nu_s, dx):
     """
     Sample stochastic seed germination events from seed production rate S_s.
     """
@@ -382,13 +382,15 @@ def sample_seed_germination(S_s, a_s, nu_s, dx):
         xx = ix + dx_
 
         if 0 <= yy < ny and 0 <= xx < nx:
-            dNt_seed[yy, xx] += 1
+            # Check burial probability at the landing site (yy, xx)
+            if np.random.rand() <= B_s[yy, xx]: 
+                dNt_seed[yy, xx] += 1
 
     return dNt_seed
 
 
 @njit
-def compute_okin_reduction(x, y, R0, udir, L_decay, wind_convention_id):
+def compute_okin_reduction(x, y, R0, udir, L_decay, hvegeff, rNt, wind_convention_id):
     """
     Compute Okin leeside shear reduction using an effective decay length.
 
@@ -410,17 +412,24 @@ def compute_okin_reduction(x, y, R0, udir, L_decay, wind_convention_id):
     ny, nx = x.shape
     R = np.ones((ny, nx))
 
+    hvegeff_zeta = np.zeros((ny, nx)) # Representative vegetation height for zeta adjustment
+    rNt_zeta = np.zeros((ny, nx)) # Relative Nt for zeta adjustment in vegetation wake
+    Rveg_zeta = np.ones((ny, nx)) # Relative shear reduction for zeta adjustment in vegetation wake
+
     # grid spacing (assumed uniform)
     dx = np.sqrt((x[0, 1] - x[0, 0])**2 + (y[0, 1] - y[0, 0])**2)
 
     deg2rad = np.pi / 180.0
-    R_end = 0.99
+    R_end = 0.999
 
     # Loop over source cells
     for iy in range(ny):
         for ix in range(nx):
 
             R0_ij = R0[iy, ix]
+            hveg0 = hvegeff[iy, ix]  # Effective vegetation height at source cell
+            rNt0 = rNt[iy, ix]       # rNt (=Nt/Nt_max) at source cell
+
             if R0_ij >= 1.0:
                 continue
 
@@ -479,8 +488,11 @@ def compute_okin_reduction(x, y, R0, udir, L_decay, wind_convention_id):
                     # Strongest reduction wins
                     if R_loc < R[jy, jx]:
                         R[jy, jx] = R_loc
+                        hvegeff_zeta[jy, jx] = hveg0
+                        rNt_zeta[jy, jx] = rNt0 
+                        Rveg_zeta[jy, jx] = (1 - R_loc) / (1 - R0_ij)
 
-    return R
+    return R, hvegeff_zeta, rNt_zeta, Rveg_zeta
 
 
 def debug_okin_geometry(x, y, iy, ix, jy, jx, ux, uy, L_end, W):

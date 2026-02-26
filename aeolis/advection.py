@@ -773,7 +773,9 @@ def sweep(Ct, Cu_bed, Cu_air, zeta, mass, dt, Ts, t_current, ds, dn, us, un, w,
         Cu_g = update_Cu(Ct_g, Cu_air_g, Cu_bed_g, zeta_g)
 
         # --- apply boundary conditions --------------------------------------
-        Ct_g, Cu_g = apply_boundary(Ct_g, Cu_g, ufs_g, ufn_g,
+        # NOTE: Replaced Cu_g with Cu_air_g in the call to apply_boundary
+        # Supply-limitations won't affect the air concentration
+        Ct_g, Cu_g = apply_boundary(Ct_g, Cu_air_g, ufs_g, ufn_g, 
                                 offshore_bc, onshore_bc, lateral_bc,
                                 offshore_flux, onshore_flux, lateral_flux)
 

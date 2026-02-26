@@ -628,7 +628,7 @@ def visualize_spatial(s, p):
     if p['ny'] > 0:
         pcs[0][0] = axs[0,0].pcolormesh(x, y, s['zb'], cmap='viridis')
         pcs[0][1] = axs[0,1].pcolormesh(x, y, s['zne'], cmap='viridis')
-        pcs[0][2] = axs[0,2].pcolormesh(x, y, rhoveg, cmap='Greens', clim= [0, 1])
+        pcs[0][2] = axs[0,2].pcolormesh(x, y, rhoveg, cmap='Greens', clim= [0, np.max(rhoveg)])
         pcs[1][0] = axs[1,0].pcolormesh(x, y, s['uw'], cmap='plasma')
         pcs[1][1] = axs[1,1].pcolormesh(x, y, s['ustar'], cmap='plasma')
         pcs[1][2] = axs[1,2].pcolormesh(x, y, s['u'][:, :, 0], cmap='plasma')
@@ -644,7 +644,7 @@ def visualize_spatial(s, p):
     else:
         pcs[0][0] = axs[0,0].scatter(x, y, c=s['zb'], cmap='viridis')
         pcs[0][1] = axs[0,1].scatter(x, y, c=s['zne'], cmap='viridis')
-        pcs[0][2] = axs[0,2].scatter(x, y, c=rhoveg, cmap='Greens', clim= [0, 1])
+        pcs[0][2] = axs[0,2].scatter(x, y, c=rhoveg, cmap='Greens', clim= [0, np.max(rhoveg)])
         pcs[1][0] = axs[1,0].scatter(x, y, c=s['uw'], cmap='plasma')
         pcs[1][1] = axs[1,1].scatter(x, y, c=s['ustar'], cmap='plasma')
         pcs[1][2] = axs[1,2].scatter(x, y, c=s['tau'], cmap='plasma')

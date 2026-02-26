@@ -305,8 +305,7 @@ class AeoLiS(IBmi):
         self.s = aeolis.fences.initialize(self.s, self.p)
 
         # initilize bed-interaction parameter zeta
-        if self.p['process_bedinteraction']:
-            self.s = aeolis.zeta.initialize(self.s, self.p)
+        self.s = aeolis.zeta.initialize(self.s, self.p)
 
         # Create interpretation information
         if self.p['visualization']:
