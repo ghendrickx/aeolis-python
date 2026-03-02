@@ -146,7 +146,10 @@ MODEL_STATE = {
         # --- Vegetation variables (new: grass.py) --------------------------------------------------------------------
         'Rveg',                             # [-] NEW Vegetation shear reduction factor including Okin effect 
         'R0veg',                            # [-] NEW Local vegetation shear reduction factor (replaces vegfac)
-
+        'hvegeff_zeta',                     # [m] Representative vegetation height for zeta adjustment in vegeation wake
+        'rNt_zeta',                         # [1/m^2] Relative Nt (= Nt / Ntmax) for zeta adjustment in vegetation wake
+        'Rveg_zeta',                        # [-] Vegetation shear reduction factor for zeta adjustment in vegetation wake
+        
         # --- Bed interaction variables (NEW) -------------------------------------------------------------------------
         'zeta',                             # [-] Bed interaction parameter for in advection equation
         'kzeta',                            # [-] Shape k-parameter in Weibull function for zeta
@@ -367,7 +370,7 @@ DEFAULT_CONFIG = {
     'dx'                            : 1.,
     'dy'                            : 1.,
     'L'                             : 100.,               # [m] Typical length scale of dune feature (perturbation)
-    'l'                             : 10.,                # [m] Inner layer height (perturbation)
+    'l'                             : 1.,                 # [m] Inner layer height (perturbation)
 
     # --- Flow separation bubble (OLD) --- #
     'buffer_width'                  : 10,                 # [m] Width of the bufferzone around the rotational grid for wind perturbation
@@ -424,6 +427,7 @@ DEFAULT_CONFIG = {
     # --- Avalanching parameters --- #
     'theta_dyn'                     : 33.,                # [degrees] Initial Dynamic angle of repose, critical dynamic slope for avalanching
     'theta_stat'                    : 34.,                # [degrees] Initial Static angle of repose, critical static slope for avalanching
+    'theta_dry'                     : 33.,                # [degrees] Angle of repose for dry sand (only used in compute_bedslope threshold)
     'max_iter_ava'                  : 1000,               # [-] Maximum number of iterations at which to quit iterative solution in avalanching calculation
 
     # --- Hydro and waves --- #
@@ -466,7 +470,7 @@ DEFAULT_CONFIG = {
     'a_weibull'                     : 1.0,                # [-] Shape parameter k of Weibull function for bed interaction parameter zeta
     'b_weibull'                     : 0.5,                # [m] Scale parameter lambda of Weibull function for bed interaction parameter zeta
     'bounce'                        : [0.75],              # [-] Fraction of sediment skimming over vegetation canopy (species-specific)
-    'alpha_lift'                    : 0.2,                # [-] Vegetation-induced upward lift (0-1) of transport-layer centroid
+    'alpha_lift'                    : [0.2],                # [-] Vegetation-induced upward lift (0-1) of transport-layer centroid
 
     # --- Grass vegetation model (new vegetation framework) --- #
     'method_vegetation'             : 'duran',       # ['duran' | 'grass'] Vegetation formulation
@@ -516,7 +520,8 @@ DEFAULT_CONFIG = {
                                                      #      alpha_comp[k,l] = effect of species l on species k
                                     
     'T_flood'                       : 7200.,         # [s] Time scale for vegetation flood stress mortality (half-life under constant inundation)
-    'gamma_Nt_decay'                : 0.,            # [-] Sensitivity of tiller density decay to relative reduction in hveg
+    'gamma_Nt_decay'                : [0.],            # [-] Sensitivity of tiller density decay to relative reduction in hveg
+    'pNt_zeta'                      : [0.3],           # [-] Exponent for reducing bed interaction parameter zeta based on tiller density 
 
 
     # --- Separation bubble parameters --- #

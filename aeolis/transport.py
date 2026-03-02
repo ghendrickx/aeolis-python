@@ -220,22 +220,11 @@ def duran_grainspeed(s, p, mode='normal'):
             # When duran_full is chosen the full formulation (eq 1.61) will be solved
             elif p['method_grainspeed'] == 'duran_full':
 
-                # Transform into complex numbers
-                u_approx_i = us_approx[:,:,i] + un_approx[:,:,i] * 1j
-                veff_i = ueff[:,:,i] * ets[:,:,i] + ueff[:,:,i] * etn[:,:,i] * 1j
-                dh_i = dhs[:,:,i] + dhn[:,:,i] * 1j
-                uf_i = uf[i]
-                alpha_i = alpha[i]
-
-                # Solver van eq 1.61
-                def solve_u(u_i: complex, veff_i: complex, uf_i: float, alpha_i: float, dh_i: complex) -> complex:
-                    return (veff_i - u_i) * np.abs(veff_i - u_i) / (uf_i ** 2) - u_i / (2 * alpha_i * np.abs(u_i)) - dh_i
-                u_i = optimize.newton(solve_u, u_approx_i, maxiter=20, tol=0.05, args=(veff_i, uf_i, alpha_i, dh_i)) 
-
-                # Transform back into components
-                us[:,:,i] = np.real(u_i)
-                un[:,:,i] = np.imag(u_i)
-                u[:,:,i]= np.abs(u_i)
+                # Solve explicitly per cell
+                us[:,:,i], un[:,:,i], u[:,:,i], status = solve_duran(
+                    us_approx[:,:,i], un_approx[:,:,i], ueff[:,:,i], ets[:,:,i], 
+                    etn[:,:,i], dhs[:,:,i], dhn[:,:,i], uf[i], alpha[i]
+                )
 
             else:
                 logger.error(f"Unknown method_grainspeed: {p['method_grainspeed']}")
@@ -258,7 +247,6 @@ def duran_grainspeed(s, p, mode='normal'):
         unST[ix_no_speed, i] *= 0.
         
     return u0, us, un, u, usST, unST
-
 
 
 def constant_grainspeed(s, p):
@@ -394,12 +382,11 @@ def equilibrium(s, p):
         if p['method_transport'].lower() == 'bagnold':
             s['Cu'][ix]  = np.maximum(0., p['Cb'] * rhoa / g * (ustar[ix] - uth[ix])**3 / u[ix])
             s['Cuf'][ix] = np.maximum(0., p['Cb'] * rhoa / g * (ustar[ix] - uthf[ix])**3 / u[ix])
-            
             s['Cu0'][ix] = np.maximum(0., p['Cb'] * rhoa / g * (ustar0[ix] - uth0[ix])**3 / u[ix])
 
             # [NEW] Two transport components divided into air and bed interaction
             s['CuAir'][ix] = np.maximum(0., p['Cb'] * rhoa / g * (ustar_air[ix] - uth0[ix])**3 / u[ix])
-            s['CuBed'][ix] = s['Cu'][ix].copy() # Temporary solution
+            s['CuBed'][ix] = s['Cu'][ix].copy()
             
             
         elif p['method_transport'].lower() == 'bagnold_gs':
@@ -407,36 +394,58 @@ def equilibrium(s, p):
             d = p['grain_size'][np.newaxis,np.newaxis,:].repeat(nx+1, axis=1)
             s['Cu'][ix]  = np.maximum(0., p['Cb'] * np.sqrt(d[ix]/Dref) * rhoa / g * (ustar[ix] - uth[ix])**3 / u[ix])
             s['Cuf'][ix] = np.maximum(0., p['Cb'] * np.sqrt(d[ix]/Dref) * rhoa / g * (ustar[ix] - uth[ix])**3 / u[ix])
-            
             s['Cu0'][ix] = np.maximum(0., p['Cb'] * np.sqrt(d[ix]/Dref) * rhoa / g * (ustar[ix] - uth[ix])**3 / u[ix])
         
+            # [NEW] Two transport components divided into air and bed interaction
+            s['CuAir'][ix] = np.maximum(0., p['Cb'] * np.sqrt(d[ix]/Dref) * rhoa / g * (ustar_air[ix] - uth0[ix])**3 / u[ix])
+            s['CuBed'][ix] = s['Cu'][ix].copy() 
+
         elif p['method_transport'].lower() == 'kawamura':
             s['Cu'][ix]  = np.maximum(0., p['Ck'] * rhoa / g * (ustar[ix] + uth[ix])**2 * (ustar[ix] - uth[ix]) / u[ix])
             s['Cuf'][ix] = np.maximum(0, p['Ck'] * rhoa / g * (ustar[ix] + uthf[ix])**2 * (ustar[ix] - uthf[ix]) / u[ix])
-        
+            s['Cu0'][ix] = np.maximum(0., p['Ck'] * rhoa / g * (ustar0[ix] + uth0[ix])**2 * (ustar0[ix] - uth0[ix]) / u[ix])
+
+            # [NEW] Two transport components divided into air and bed interaction
+            s['CuAir'][ix] = np.maximum(0., p['Ck'] * rhoa / g * (ustar_air[ix] + uth0[ix])**2 * (ustar_air[ix] - uth0[ix]) / u[ix])
+            s['CuBed'][ix] = s['Cu'][ix].copy()
+
         elif p['method_transport'].lower() == 'lettau':
             s['Cu'][ix]  = np.maximum(0., p['Cl'] * rhoa / g * ustar[ix]**2 * (ustar[ix] - uth[ix]) / u[ix])
             s['Cuf'][ix] = np.maximum(0., p['Cl'] * rhoa / g * ustar[ix]**2 * (ustar[ix] - uthf[ix]) / u[ix])
+            s['Cu0'][ix] = np.maximum(0., p['Cl'] * rhoa / g * ustar0[ix]**2 * (ustar0[ix] - uth0[ix]) / u[ix])
+
+            # [NEW] Two transport components divided into air and bed interaction
+            s['CuAir'][ix] = np.maximum(0., p['Cl'] * rhoa / g * ustar_air[ix]**2 * (ustar_air[ix] - uth0[ix]) / u[ix])
+            s['CuBed'][ix] = s['Cu'][ix].copy()
 
         elif p['method_transport'].lower() == 'dk':
             s['Cu'][ix]  = np.maximum(0., p['Cdk'] * rhoa / g * 0.8*uth[ix] * (ustar[ix]**2 - (0.8*uth[ix])**2) / u[ix])
             s['Cuf'][ix] = np.maximum(0., p['Cdk'] * rhoa / g * 0.8*uthf[ix] * (ustar[ix]**2 - (0.8*uthf[ix])**2) / u[ix])
-            
             s['Cu0'][ix]  = np.maximum(0., p['Cdk'] * rhoa / g * 0.8*uth0[ix] * (ustar0[ix]**2 - (0.8*uth0[ix])**2) / u[ix])
          
+            # [NEW] Two transport components divided into air and bed interaction
+            s['CuAir'][ix] = np.maximum(0., p['Cdk'] * rhoa / g * 0.8*uth0[ix] * (ustar_air[ix]**2 - (0.8*uth0[ix])**2) / u[ix])
+            s['CuBed'][ix] = s['Cu'][ix].copy()
+
         elif p['method_transport'].lower() == 'sauermann':
             alpha_sauermann = 0.35
             s['Cu'][ix]  = np.maximum(0., 2.* alpha_sauermann * rhoa / g * (ustar[ix]**2 - uth[ix]**2))
             s['Cuf'][ix] = np.maximum(0., 2.* alpha_sauermann * rhoa / g * (ustar[ix]**2 - uthf[ix]**2))
-             
             s['Cu0'][ix]  = np.maximum(0., 2.* alpha_sauermann * rhoa / g * (ustar0[ix]**2 - uth0[ix]**2))
          
+            # [NEW] Two transport components divided into air and bed interaction
+            s['CuAir'][ix] = np.maximum(0., 2.* alpha_sauermann * rhoa / g * (ustar_air[ix]**2 - uth0[ix]**2))
+            s['CuBed'][ix] = s['Cu'][ix].copy()
+
         elif p['method_transport'].lower() == 'vanrijn_strypsteen':
             s['Cu'][ix]  = np.maximum(0., p['Cb'] * rhoa / g * ((ustar[ix])**3 - (uth[ix])**3) / u[ix])
             s['Cuf'][ix] = np.maximum(0., p['Cb'] * rhoa / g * ((ustar[ix])**3 - (uth[ix])**3) / u[ix])
-            
             s['Cu0'][ix] = np.maximum(0., p['Cb'] * rhoa / g * ((ustar0[ix])**3 - (uth0[ix])**3) / u[ix])
         
+            # [NEW] Two transport components divided into air and bed interaction
+            s['CuAir'][ix] = np.maximum(0., p['Cb'] * rhoa / g * ((ustar_air[ix])**3 - (uth0[ix])**3) / u[ix])
+            s['CuBed'][ix] = s['Cu'][ix].copy()
+
         else:
             logger.log_and_raise('Unknown transport formulation [%s]' % p['method_transport'], exc=ValueError)   
 
@@ -444,6 +453,8 @@ def equilibrium(s, p):
     s['Cu']  *= p['accfac']
     s['Cuf'] *= p['accfac']
     s['Cu0'] *= p['accfac']
+    s['CuAir'] *= p['accfac']
+    s['CuBed'] *= p['accfac']  
     
     return s
 
@@ -514,3 +525,58 @@ def renormalize_weights(w, ix):
 
     return w
 
+
+@njit()
+def solve_duran(us, un, ueff, ets, etn, dhs, dhn, uf, alpha, maxiter=100, tol=1e-2):
+    """
+    Loops over every cell to solve Duran eq 1.61.
+    Returns velocities and a 'status' map (1=converged, 0=failed).
+    """
+
+    rows, cols = us.shape
+
+    # Prepare output arrays
+    us_out = np.empty_like(us)
+    un_out = np.empty_like(un)
+    u_out = np.empty_like(us)
+    status = np.zeros((rows, cols), dtype=np.int8) # For debugging
+  
+    # Loop over every grid cell
+    for r in range(rows):
+        for c in range(cols):
+
+            # Local parameters
+            u_c = us[r,c] + 1j * un[r,c]
+            ueff_c = ueff[r,c] * (ets[r,c] + 1j * etn[r,c])
+            dh_c = dhs[r,c] + 1j * dhn[r,c]
+
+            # Newton-Raphson for this specific cell
+            converged = False
+            for k in range(maxiter):
+                u_mag = max(abs(u_c), 1e-6)
+
+                # Forces
+                rel_u = ueff_c - u_c
+                drag = (rel_u * abs(rel_u)) / uf**2
+                fric = u_c / (2 * alpha * u_mag)
+
+                # Residual & Derivative
+                res = drag - fric - dh_c
+
+                # Check convergence
+                if abs(res) < tol:
+                    converged = True
+                    break
+
+                # Update
+                d_drag = -2 * abs(rel_u) / uf**2
+                d_fric = -1 / (2 * alpha * u_mag)
+                u_c -= res / (d_drag + d_fric)
+
+            # Store results
+            us_out[r,c] = u_c.real
+            un_out[r,c] = u_c.imag
+            u_out[r,c]  = abs(u_c)
+            status[r,c] = 1 if converged else 0
+
+    return us_out, un_out, u_out, status
