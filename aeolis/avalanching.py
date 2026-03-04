@@ -114,7 +114,7 @@ def avalanche(s, p):
         # Ensure water level is up-to-date with bed level
         s['zb'] = zb
         s['gradh'] = grad_h
-        s['zs'] = s['SWL']
+        s['zs'] = s['SWL'].copy()
         ix = (s['zb'] > s['zs'])
         s['zs'][ix] = s['zb'][ix]
 
